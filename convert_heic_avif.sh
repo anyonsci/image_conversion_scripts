@@ -1,5 +1,6 @@
 #!/bin/bash
 
+IFS=$'\n'
 files=$(find . -name '*.heic') 
 
 for file in $files
