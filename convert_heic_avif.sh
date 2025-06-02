@@ -1,7 +1,7 @@
 #!/bin/bash
 
 IFS=$'\n'
-ext=HEIC
+ext=jpg
 files=$(find . -name "*.${ext}") 
 
 for file in $files
@@ -10,7 +10,7 @@ do
   mogrify -auto-orient "$file"
   ## print current file being processed
   # echo $file
-  magick -regard-warnings "$file" "${file%.${ext}}.avif" /dev/null
+  magick -regard-warnings "$file" "${file%.${ext}}.avif"
   error=$?
   if [ $error -ne 0 ]
   then
