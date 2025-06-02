@@ -17,4 +17,5 @@ do
     echo "Error: $file was not converted: $error"
   else
     rm "$file"
+  fi
 done
