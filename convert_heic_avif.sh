@@ -10,6 +10,11 @@ do
   mogrify -auto-orient "$file"
   ## print current file being processed
   # echo $file
-  magick "$file" "${file%.${ext}}.avif"
-  rm "$file"
+  magick -regard-warnings "$file" "${file%.${ext}}.avif" /dev/null
+  error=$?
+  if [ $error -ne 0 ]
+  then
+    echo "Error: $file was not converted: $error"
+  else
+    rm "$file"
 done
