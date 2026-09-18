@@ -157,17 +157,16 @@ avifenc_has_svt() {
   command -v "$enc" >/dev/null 2>&1 || return 1
   local tmp
   tmp="$(mktemp -d)"
-  # Tiny valid JPEG (same probe bytes as the Python tool)
-  python3 - "$tmp/t.jpg" <<'PY'
+  # 64x64 PNG: older SVT-AV1 versions reject smaller dimensions.
+  python3 - "$tmp/t.png" <<'PY'
 import base64, pathlib, sys
 pathlib.Path(sys.argv[1]).write_bytes(base64.b64decode(
-    "/9j/4AAQSkZJRgABAgAAAQABAAD//gAQTGF2YzYyLjIzLjEwMwD/2wBDAAgKCgsKCw0NDQ0NDRA"
-    "PEBAQEBAQEBAQEBASEhIVFRUSEhIQEBISFBQVFRcXFxUVFRUXFxkZGR4eHBwjIyQrKzP/xABMAA"
-    "EBAAAAAAAAAAAAAAAAAAAABgEBAQAAAAAAAAAAAAAAAAAABgcQAQAAAAAAAAAAAAAAAAAAAAAR"
-    "AQAAAAAAAAAAAAAAAAAAAAD/wAARCAAIAAgDASIAAhEAAxEA/9oADAMBAAIRAxEAPwCLAE1/f//Z"
+    "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAS0lEQVR42u3PMQ0AAAwDoEqv9ErY"
+    "vQQckD4XAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAYHLAB"
+    "8+AWnmfUycAAAAAElFTkSuQmCC"
 ))
 PY
-  if "$enc" --codec svt -q 60 -s 10 -j 1 "${tmp}/t.jpg" "${tmp}/t.avif" >/dev/null 2>&1 \
+  if "$enc" --codec svt -q 60 -s 10 -j 1 "${tmp}/t.png" "${tmp}/t.avif" >/dev/null 2>&1 \
     && [[ -s "${tmp}/t.avif" ]]; then
     rm -rf "$tmp"
     return 0

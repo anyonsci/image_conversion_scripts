@@ -18,12 +18,12 @@ EXIF_HINT_KEYS = ("DateTimeOriginal", "Orientation", "Make", "ExifByteOrder")
 ICC_HINT_KEYS = ("ProfileDescription", "ICC_Profile", "ColorSpace")
 GAINMAP_META_HINTS = ("GainMap", "hdrgm", "UltraHDR")
 
-# Valid 8x8 JPEG used only to probe whether avifenc has an encode codec.
-PROBE_JPEG_B64 = (
-    "/9j/4AAQSkZJRgABAgAAAQABAAD//gAQTGF2YzYyLjIzLjEwMwD/2wBDAAgKCgsKCw0NDQ0NDRA"
-    "PEBAQEBAQEBAQEBASEhIVFRUSEhIQEBISFBQVFRcXFxUVFRUXFxkZGR4eHBwjIyQrKzP/xABMAA"
-    "EBAAAAAAAAAAAAAAAAAAAABgEBAQAAAAAAAAAAAAAAAAAABgcQAQAAAAAAAAAAAAAAAAAAAAAR"
-    "AQAAAAAAAAAAAAAAAAAAAAD/wAARCAAIAAgDASIAAhEAAxEA/9oADAMBAAIRAxEAPwCLAE1/f//Z"
+# Valid 64x64 PNG used only to probe whether avifenc has an SVT-AV1 encoder.
+# SVT-AV1 versions before 3.0 reject dimensions smaller than 64x64.
+PROBE_IMAGE_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAS0lEQVR42u3PMQ0AAAwDoEqv9ErY"
+    "vQQckD4XAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAYHLAB"
+    "8+AWnmfUycAAAAAElFTkSuQmCC"
 )
 
 INSTALL_HINT = """
@@ -39,7 +39,7 @@ Install tips:
   • dssim:     cargo install dssim  |  brew install dssim
   • libavif apps (avifenc/avifdec/avifgainmaputil) ≥ 1.2 / ideally 1.3+:
       Build with SVT-AV1 encoding and a decoder, e.g.:
-        cmake -DAVIF_BUILD_APPS=ON -DAVIF_CODEC_SVT=SYSTEM \
+        cmake -DAVIF_BUILD_APPS=ON -DAVIF_CODEC_SVT=SYSTEM \\
               -DAVIF_CODEC_DAV1D=SYSTEM ...
       Also enable JPEG + libxml2 so Ultra HDR gain maps can be read.
       Confirm: `avifenc --version` lists svt, and

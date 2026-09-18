@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
 
-from .constants import INSTALL_HINT, PROBE_JPEG_B64
+from .constants import INSTALL_HINT, PROBE_IMAGE_B64
 from .process import CommandRunner
 
 
@@ -113,9 +113,9 @@ class ToolchainFactory:
 
     def _probe_encoder(self, avifenc: str) -> tuple[bool, str]:
         with tempfile.TemporaryDirectory(prefix="avifenc_probe_") as td:
-            jpg = Path(td) / "t.jpg"
+            probe_image = Path(td) / "t.png"
             avif = Path(td) / "t.avif"
-            jpg.write_bytes(base64.b64decode(PROBE_JPEG_B64))
+            probe_image.write_bytes(base64.b64decode(PROBE_IMAGE_B64))
             proc = self._runner.run(
                 [
                     avifenc,
@@ -127,7 +127,7 @@ class ToolchainFactory:
                     "10",
                     "-j",
                     "1",
-                    str(jpg),
+                    str(probe_image),
                     str(avif),
                 ]
             )
