@@ -166,7 +166,8 @@ pathlib.Path(sys.argv[1]).write_bytes(base64.b64decode(
     "8+AWnmfUycAAAAAElFTkSuQmCC"
 ))
 PY
-  if "$enc" --codec svt -q 60 -s 10 -j 1 "${tmp}/t.png" "${tmp}/t.avif" >/dev/null 2>&1 \
+  # SVT-AV1 only supports 4:2:0, so force --yuv 420 (avifenc defaults to 444 for PNG).
+  if "$enc" --codec svt --yuv 420 -q 60 -s 10 -j 1 "${tmp}/t.png" "${tmp}/t.avif" >/dev/null 2>&1 \
     && [[ -s "${tmp}/t.avif" ]]; then
     rm -rf "$tmp"
     return 0

@@ -134,6 +134,9 @@ class ToolchainFactory:
                 avifenc,
                 "--codec",
                 "svt",
+                # SVT-AV1 only supports 4:2:0.
+                "--yuv",
+                "420",
                 "-q",
                 "60",
                 "-s",

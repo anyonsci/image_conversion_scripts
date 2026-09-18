@@ -62,7 +62,7 @@ Confirm:
 
 ```bash
 avifenc --version          # should list svt
-avifenc --codec svt -q 60 input.jpg output.avif
+avifenc --codec svt --yuv 420 -q 60 input.jpg output.avif  # SVT-AV1 is 4:2:0 only
 avifenc -h 2>&1 | grep -i qgain
 ```
 
@@ -196,10 +196,13 @@ Gain-map tonemap informational checks via `avifgainmaputil tonemap` when availab
 ## Profiles
 | Probe | Encode path |
 |-------|-------------|
-| `jpeg+gainmap` | `avifenc --codec svt -q … --qgain-map …` |
-| `jpeg` | `avifenc --codec svt -q …` |
-| `png` | `avifenc --codec svt -q … --qalpha …` |
-| `webp` | ffmpeg → PNG, then `avifenc --codec svt` |
+| `jpeg+gainmap` | `avifenc --codec svt --yuv 420 -q … --qgain-map …` |
+| `jpeg` | `avifenc --codec svt --yuv 420 -q …` |
+| `png` | `avifenc --codec svt --yuv 420 -q … --qalpha …` |
+| `webp` | ffmpeg → PNG, then `avifenc --codec svt --yuv 420` |
+
+> SVT-AV1 only supports 4:2:0 chroma, so all encodes force `--yuv 420`.
+> 4:4:4/4:2:2 sources are downsampled to 4:2:0 during encoding.
 
 ## Limits
 - Lossy AVIF cannot be bit-identical to JPEG; QA is threshold-based.

@@ -63,6 +63,10 @@ class AvifEncoder:
             self._tools.avifenc,
             "--codec",
             "svt",
+            # SVT-AV1 only supports 4:2:0; avifenc otherwise defaults to 444
+            # for PNG (and mirrors the source subsampling for JPEG).
+            "--yuv",
+            "420",
             "-q",
             str(self._settings.quality),
             "-s",

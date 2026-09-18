@@ -43,6 +43,7 @@ Install tips:
               -DAVIF_CODEC_DAV1D=SYSTEM ...
       Also enable JPEG + libxml2 so Ultra HDR gain maps can be read.
       Confirm: `avifenc --version` lists svt, and
-      `avifenc --codec svt input.jpg output.avif` succeeds, and
+      `avifenc --codec svt --yuv 420 input.jpg output.avif` succeeds
+      (SVT-AV1 only supports 4:2:0), and
       `avifenc -h` mentions --qgain-map for gain-map support.
 """.strip()
