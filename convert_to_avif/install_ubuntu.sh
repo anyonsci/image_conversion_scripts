@@ -3,9 +3,9 @@
 #
 # Installs:
 #   - Python 3, ffmpeg, exiftool, Pillow/numpy (verify fallback)
-#   - Build toolchain + libaom / libjpeg / libpng / libxml2
+#   - Build toolchain + SVT-AV1 / dav1d / libjpeg / libpng / libxml2
 #   - libavif apps (avifenc, avifdec, avifgainmaputil) built from source
-#     with AOM encoder + JPEG gain-map support
+#     with SVT-AV1 encoder + JPEG gain-map support
 #   - dssim via cargo (optional; ffmpeg ssim also works for --verify)
 #
 # Usage:
@@ -126,6 +126,9 @@ apt_update() {
 
 install_apt_packages() {
   log "Installing apt packages"
+  if ! apt-cache show libsvtav1enc-dev >/dev/null 2>&1; then
+    die "libsvtav1enc-dev is unavailable for this distribution/architecture; SVT-AV1 is required"
+  fi
   local pkgs=(
     python3
     python3-pil
@@ -139,20 +142,17 @@ install_apt_packages() {
     cmake
     ninja-build
     pkg-config
-    libaom-dev
+    libsvtav1enc-dev
+    libdav1d-dev
     libjpeg-dev
     libpng-dev
     zlib1g-dev
     libxml2-dev
   )
-  # Optional encode codec if the distro ships it
-  if apt-cache show libsvtav1enc-dev >/dev/null 2>&1; then
-    pkgs+=(libsvtav1enc-dev)
-  fi
   run_apt "${pkgs[@]}"
 }
 
-avifenc_has_encoder() {
+avifenc_has_svt() {
   local enc="${1:-avifenc}"
   command -v "$enc" >/dev/null 2>&1 || return 1
   local tmp
@@ -167,7 +167,7 @@ pathlib.Path(sys.argv[1]).write_bytes(base64.b64decode(
     "AQAAAAAAAAAAAAAAAAAAAAD/wAARCAAIAAgDASIAAhEAAxEA/9oADAMBAAIRAxEAPwCLAE1/f//Z"
 ))
 PY
-  if "$enc" -q 60 -s 10 -j 1 "${tmp}/t.jpg" "${tmp}/t.avif" >/dev/null 2>&1 \
+  if "$enc" --codec svt -q 60 -s 10 -j 1 "${tmp}/t.jpg" "${tmp}/t.avif" >/dev/null 2>&1 \
     && [[ -s "${tmp}/t.avif" ]]; then
     rm -rf "$tmp"
     return 0
@@ -183,7 +183,7 @@ avifenc_has_qgain() {
 }
 
 system_avif_ok() {
-  avifenc_has_encoder avifenc && avifenc_has_qgain avifenc \
+  avifenc_has_svt avifenc && avifenc_has_qgain avifenc \
     && command -v avifdec >/dev/null 2>&1 \
     && command -v avifgainmaputil >/dev/null 2>&1
 }
@@ -217,16 +217,12 @@ build_libavif() {
     -DCMAKE_BUILD_TYPE=Release
     -DCMAKE_INSTALL_PREFIX="$PREFIX"
     -DAVIF_BUILD_APPS=ON
-    -DAVIF_CODEC_AOM=SYSTEM
+    -DAVIF_CODEC_SVT=SYSTEM
+    -DAVIF_CODEC_DAV1D=SYSTEM
     -DAVIF_JPEG=SYSTEM
     -DAVIF_ZLIBPNG=SYSTEM
     -DAVIF_LIBXML2=SYSTEM
   )
-
-  # Optional SVT if headers/libs are present
-  if pkg-config --exists SvtAv1Enc 2>/dev/null; then
-    cmake_args+=(-DAVIF_CODEC_SVT=SYSTEM)
-  fi
 
   cmake "${cmake_args[@]}"
   cmake --build "$build" --parallel "$JOBS"
@@ -298,10 +294,10 @@ verify_install() {
     missing=1
   fi
 
-  if avifenc_has_encoder avifenc; then
-    printf '  OK  avifenc can encode\n'
+  if avifenc_has_svt avifenc; then
+    printf '  OK  avifenc can encode with SVT-AV1\n'
   else
-    printf '  FAIL avifenc cannot encode (no AV1 codec)\n'
+    printf '  FAIL avifenc cannot encode with SVT-AV1\n'
     missing=1
   fi
 

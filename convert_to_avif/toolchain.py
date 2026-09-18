@@ -61,9 +61,7 @@ class Toolchain:
 
 
 class ToolchainFactory:
-    """Resolve binaries from PATH / env overrides and validate encode capability."""
-
-    _ENCODER_NAMES = ("aom", "svt", "rav1e", "avm")
+    """Resolve binaries from PATH / env overrides and validate SVT encode capability."""
 
     def __init__(self, runner: Optional[CommandRunner] = None) -> None:
         self._runner = runner or CommandRunner()
@@ -114,18 +112,33 @@ class ToolchainFactory:
         return probe.returncode == 0 or "--qgain-map" in ((probe.stdout or "") + (probe.stderr or ""))
 
     def _probe_encoder(self, avifenc: str) -> tuple[bool, str]:
-        ver = self._runner.output([avifenc, "--version"]).lower()
-        named = [name for name in self._ENCODER_NAMES if re.search(rf"\b{name}\b", ver)]
-
         with tempfile.TemporaryDirectory(prefix="avifenc_probe_") as td:
             jpg = Path(td) / "t.jpg"
             avif = Path(td) / "t.avif"
             jpg.write_bytes(base64.b64decode(PROBE_JPEG_B64))
-            proc = self._runner.run([avifenc, "-q", "60", "-s", "10", "-j", "1", str(jpg), str(avif)])
+            proc = self._runner.run(
+                [
+                    avifenc,
+                    "--codec",
+                    "svt",
+                    "-q",
+                    "60",
+                    "-s",
+                    "10",
+                    "-j",
+                    "1",
+                    str(jpg),
+                    str(avif),
+                ]
+            )
             out = ((proc.stdout or "") + (proc.stderr or "")).lower()
             if proc.returncode == 0 and avif.is_file() and avif.stat().st_size > 0:
-                return True, ",".join(named) if named else "encode-ok"
-            if "no codec available" in out or "codec 'none'" in out:
-                return False, "no AV1 encode codec linked into libavif (enable AOM or SVT at build time)"
+                return True, "svt"
+            if (
+                "no codec available" in out
+                or "codec 'none'" in out
+                or not re.search(r"\bsvt\b", self._runner.output([avifenc, "--version"]).lower())
+            ):
+                return False, "SVT-AV1 is not linked into libavif (enable AVIF_CODEC_SVT)"
             lines = ((proc.stderr or "") + (proc.stdout or "") or "encode probe failed").strip().splitlines()
             return False, (lines[-1] if lines else "encode probe failed")[:200]

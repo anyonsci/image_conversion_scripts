@@ -10,7 +10,8 @@ raster and compares against the decoded source.
 
 ## Install (Ubuntu / Debian)
 
-One-shot installer (apt packages + libavif built with AOM encoder and gain-map support):
+One-shot installer (apt packages + libavif built with the faster SVT-AV1 encoder
+and gain-map support):
 
 ```bash
 # Recommended: non-interactive
@@ -52,15 +53,16 @@ brew install exiftool
 You need **`avifenc`**, and for QA **`avifdec`**. For Ultra HDR verification also
 **`avifgainmaputil`**.
 
-**Critical:** `avifenc` must be linked against an AV1 **encoder** (libaom and/or
-SVT-AV1). A build with apps but `AVIF_CODEC_AOM=OFF` / `AVIF_CODEC_SVT=OFF` will
-start, then fail with `No codec available`.
+**Critical:** `avifenc` must be linked against the **SVT-AV1 encoder**. This tool
+selects it explicitly with `--codec svt`; a libavif build without
+`AVIF_CODEC_SVT` will fail its startup capability check.
 
 Many distro packages also ship libavif **without** gain-map JPEG support.
 Confirm:
 
 ```bash
-avifenc --version          # should list an encoder such as aom or svt
+avifenc --version          # should list svt
+avifenc --codec svt -q 60 input.jpg output.avif
 avifenc -h 2>&1 | grep -i qgain
 ```
 
@@ -71,11 +73,13 @@ Typical build shape (adjust flags to the release you use):
 
 ```bash
 # deps example (Debian/Ubuntu):
-#   cmake ninja-build libaom-dev libjpeg-dev libpng-dev libxml2-dev pkg-config
+#   cmake ninja-build libsvtav1enc-dev libdav1d-dev
+#   libjpeg-dev libpng-dev libxml2-dev pkg-config
 cmake -S . -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DAVIF_BUILD_APPS=ON \
-  -DAVIF_CODEC_AOM=SYSTEM \
+  -DAVIF_CODEC_SVT=SYSTEM \
+  -DAVIF_CODEC_DAV1D=SYSTEM \
   -DAVIF_JPEG=SYSTEM \
   -DAVIF_ZLIBPNG=SYSTEM \
   -DAVIF_LIBXML2=SYSTEM
@@ -83,7 +87,7 @@ cmake --build build
 # install avifenc avifdec avifgainmaputil onto PATH
 ```
 
-Use `-DAVIF_CODEC_SVT=SYSTEM` instead/in addition if you prefer SVT-AV1.
+SVT-AV1 handles encoding; dav1d provides AVIF decoding for QA.
 
 #### 4. Perceptual verify tools (recommended for `--verify`)
 Prefer one of:
@@ -192,10 +196,10 @@ Gain-map tonemap informational checks via `avifgainmaputil tonemap` when availab
 ## Profiles
 | Probe | Encode path |
 |-------|-------------|
-| `jpeg+gainmap` | `avifenc -q … --qgain-map …` |
-| `jpeg` | `avifenc -q …` |
-| `png` | `avifenc -q … --qalpha …` |
-| `webp` | ffmpeg → PNG, then `avifenc` |
+| `jpeg+gainmap` | `avifenc --codec svt -q … --qgain-map …` |
+| `jpeg` | `avifenc --codec svt -q …` |
+| `png` | `avifenc --codec svt -q … --qalpha …` |
+| `webp` | ffmpeg → PNG, then `avifenc --codec svt` |
 
 ## Limits
 - Lossy AVIF cannot be bit-identical to JPEG; QA is threshold-based.

@@ -61,6 +61,8 @@ class AvifEncoder:
     ) -> list[str]:
         cmd = [
             self._tools.avifenc,
+            "--codec",
+            "svt",
             "-q",
             str(self._settings.quality),
             "-s",
