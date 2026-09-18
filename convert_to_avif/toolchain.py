@@ -6,6 +6,8 @@ import base64
 import os
 import re
 import shutil
+import signal
+import sys
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -13,6 +15,18 @@ from typing import Optional
 
 from .constants import INSTALL_HINT, PROBE_IMAGE_B64
 from .process import CommandRunner
+
+DEBUG = os.environ.get("CONVERT_TO_AVIF_DEBUG", "").strip() not in ("", "0", "false", "no")
+
+
+def _returncode_detail(code: int) -> str:
+    if code < 0:
+        try:
+            name = signal.Signals(-code).name
+        except ValueError:
+            name = "UNKNOWN"
+        return f"{code} (killed by signal {-code} {name})"
+    return str(code)
 
 
 class ToolchainError(RuntimeError):
@@ -116,29 +130,57 @@ class ToolchainFactory:
             probe_image = Path(td) / "t.png"
             avif = Path(td) / "t.avif"
             probe_image.write_bytes(base64.b64decode(PROBE_IMAGE_B64))
-            proc = self._runner.run(
-                [
-                    avifenc,
-                    "--codec",
-                    "svt",
-                    "-q",
-                    "60",
-                    "-s",
-                    "10",
-                    "-j",
-                    "1",
-                    str(probe_image),
-                    str(avif),
-                ]
-            )
+            cmd = [
+                avifenc,
+                "--codec",
+                "svt",
+                "-q",
+                "60",
+                "-s",
+                "10",
+                "-j",
+                "1",
+                str(probe_image),
+                str(avif),
+            ]
+            proc = self._runner.run(cmd)
+            out_size = avif.stat().st_size if avif.is_file() else -1
+            version = self._runner.output([avifenc, "--version"])
+
+            if DEBUG:
+                self._dump_probe("probe", cmd, proc, out_size, version)
+
             out = ((proc.stdout or "") + (proc.stderr or "")).lower()
-            if proc.returncode == 0 and avif.is_file() and avif.stat().st_size > 0:
+            if proc.returncode == 0 and out_size > 0:
                 return True, "svt"
+
+            # Surface the full failure so the real SVT error/crash is visible.
+            self._dump_probe("PROBE FAILED", cmd, proc, out_size, version)
+
             if (
                 "no codec available" in out
                 or "codec 'none'" in out
-                or not re.search(r"\bsvt\b", self._runner.output([avifenc, "--version"]).lower())
+                or not re.search(r"\bsvt\b", version.lower())
             ):
                 return False, "SVT-AV1 is not linked into libavif (enable AVIF_CODEC_SVT)"
             lines = ((proc.stderr or "") + (proc.stdout or "") or "encode probe failed").strip().splitlines()
             return False, (lines[-1] if lines else "encode probe failed")[:200]
+
+    @staticmethod
+    def _dump_probe(label, cmd, proc, out_size, version) -> None:
+        block = [
+            "",
+            f"===== avifenc {label} (SVT capability check) =====",
+            f"cmd:        {' '.join(cmd)}",
+            f"returncode: {_returncode_detail(proc.returncode)}",
+            f"output avif size: {out_size} bytes",
+            "--- avifenc --version ---",
+            version.strip() or "(no output)",
+            "--- probe stdout ---",
+            (proc.stdout or "").rstrip() or "(empty)",
+            "--- probe stderr ---",
+            (proc.stderr or "").rstrip() or "(empty)",
+            "==================================================",
+            "",
+        ]
+        print("\n".join(block), file=sys.stderr)
