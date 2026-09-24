@@ -32,9 +32,10 @@ class ConvertStatus(str, Enum):
 
 @dataclass(frozen=True)
 class EncodeSettings:
+    codec: str = "aom"
     quality: int = 85
     gain_quality: int = 85
-    speed: int = 4
+    speed: int = 8
 
 
 @dataclass(frozen=True)
@@ -100,17 +101,59 @@ class ConvertResult:
     status: ConvertStatus
     message: str = ""
     size_ratio: float = 0.0
+    src_bytes: int = 0
+    dst_bytes: int = 0
+    duration_sec: float = 0.0
+    dimensions: str = ""
     dssim: Optional[float] = None
     ssim: Optional[float] = None
     qa: list[str] = field(default_factory=list)
 
     @classmethod
-    def skipped(cls, source: str, output: str, profile: EncodeProfile, message: str) -> "ConvertResult":
-        return cls(source, output, profile.value, ConvertStatus.SKIPPED, message)
+    def skipped(
+        cls,
+        source: str,
+        output: str,
+        profile: EncodeProfile,
+        message: str,
+        src_bytes: int = 0,
+        dst_bytes: int = 0,
+        dimensions: str = "",
+        duration_sec: float = 0.0,
+    ) -> "ConvertResult":
+        return cls(
+            source=source,
+            output=output,
+            profile=profile.value,
+            status=ConvertStatus.SKIPPED,
+            message=message,
+            src_bytes=src_bytes,
+            dst_bytes=dst_bytes,
+            dimensions=dimensions,
+            duration_sec=duration_sec,
+        )
 
     @classmethod
-    def failed(cls, source: str, output: str, profile: EncodeProfile, message: str) -> "ConvertResult":
-        return cls(source, output, profile.value, ConvertStatus.FAILED, message)
+    def failed(
+        cls,
+        source: str,
+        output: str,
+        profile: EncodeProfile,
+        message: str,
+        src_bytes: int = 0,
+        dimensions: str = "",
+        duration_sec: float = 0.0,
+    ) -> "ConvertResult":
+        return cls(
+            source=source,
+            output=output,
+            profile=profile.value,
+            status=ConvertStatus.FAILED,
+            message=message,
+            src_bytes=src_bytes,
+            dimensions=dimensions,
+            duration_sec=duration_sec,
+        )
 
     @classmethod
     def from_qa(
@@ -120,28 +163,40 @@ class ConvertResult:
         profile: EncodeProfile,
         *,
         size_ratio: float,
+        src_bytes: int = 0,
+        dst_bytes: int = 0,
+        dimensions: str = "",
+        duration_sec: float = 0.0,
         qa: QaOutcome,
         rejected_message: str,
     ) -> "ConvertResult":
         if qa.ok:
             return cls(
-                source,
-                output,
-                profile.value,
-                ConvertStatus.CONVERTED,
-                "ok",
+                source=source,
+                output=output,
+                profile=profile.value,
+                status=ConvertStatus.CONVERTED,
+                message="ok",
                 size_ratio=size_ratio,
+                src_bytes=src_bytes,
+                dst_bytes=dst_bytes,
+                dimensions=dimensions,
+                duration_sec=duration_sec,
                 dssim=qa.dssim,
                 ssim=qa.ssim,
                 qa=qa.notes,
             )
         return cls(
-            source,
-            output,
-            profile.value,
-            ConvertStatus.REJECTED,
-            rejected_message,
+            source=source,
+            output=output,
+            profile=profile.value,
+            status=ConvertStatus.REJECTED,
+            message=rejected_message,
             size_ratio=size_ratio,
+            src_bytes=src_bytes,
+            dst_bytes=dst_bytes,
+            dimensions=dimensions,
+            duration_sec=duration_sec,
             dssim=qa.dssim,
             ssim=qa.ssim,
             qa=qa.notes,

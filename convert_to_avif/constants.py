@@ -15,7 +15,7 @@ GAINMAP_MARKERS = (
 )
 
 EXIF_HINT_KEYS = ("DateTimeOriginal", "Orientation", "Make", "ExifByteOrder")
-ICC_HINT_KEYS = ("ProfileDescription", "ICC_Profile", "ColorSpace")
+ICC_HINT_KEYS = ("ProfileDescription", "ICC_Profile")
 GAINMAP_META_HINTS = ("GainMap", "hdrgm", "UltraHDR")
 
 # Valid 64x64 PNG used only to probe whether avifenc has an SVT-AV1 encoder.

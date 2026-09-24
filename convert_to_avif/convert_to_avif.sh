@@ -4,4 +4,5 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT="$(dirname "$ROOT")"
 export PYTHONPATH="${PARENT}${PYTHONPATH:+:$PYTHONPATH}"
-exec python3 -m convert_to_avif "$@"
+export PYTHONUNBUFFERED=1
+exec python3 -u -m convert_to_avif "$@"

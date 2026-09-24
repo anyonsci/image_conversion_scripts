@@ -57,7 +57,7 @@ class SimilarityMeasurer:
         if not match:
             return None
         ssim = float(match.group(1))
-        return SimilarityScore((1.0 - ssim) / 2.0, ssim, "ffmpeg-ssim")
+        return SimilarityScore(None, ssim, "ffmpeg-ssim")
 
     def _via_pillow(self, png_a: Path, png_b: Path) -> Optional[SimilarityScore]:
         try:
@@ -73,7 +73,7 @@ class SimilarityMeasurer:
         if a.shape != b.shape:
             return SimilarityScore(None, None, "shape-mismatch")
         ssim = float(sum(self._ssim_channel(a[:, :, c], b[:, :, c]) for c in range(3)) / 3.0)
-        return SimilarityScore((1.0 - ssim) / 2.0, ssim, "pillow-ssim")
+        return SimilarityScore(None, ssim, "pillow-ssim")
 
     @staticmethod
     def _ssim_channel(x, y) -> float:

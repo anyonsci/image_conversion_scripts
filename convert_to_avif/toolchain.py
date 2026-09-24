@@ -126,6 +126,12 @@ class ToolchainFactory:
         return probe.returncode == 0 or "--qgain-map" in ((probe.stdout or "") + (probe.stderr or ""))
 
     def _probe_encoder(self, avifenc: str) -> tuple[bool, str]:
+        version = self._runner.output([avifenc, "--version"]).lower()
+        available = [enc for enc in ("aom", "svt", "rav1e") if re.search(rf"\b{enc}\b", version)]
+        if not available:
+            return False, "no AV1 encoder linked into libavif"
+
+        preferred = available[0]
         with tempfile.TemporaryDirectory(prefix="avifenc_probe_") as td:
             probe_image = Path(td) / "t.png"
             avif = Path(td) / "t.avif"
@@ -133,14 +139,13 @@ class ToolchainFactory:
             cmd = [
                 avifenc,
                 "--codec",
-                "svt",
-                # SVT-AV1 only supports 4:2:0.
+                preferred,
                 "--yuv",
                 "420",
                 "-q",
                 "60",
                 "-s",
-                "10",
+                "10" if preferred == "svt" else "8",
                 "-j",
                 "1",
                 str(probe_image),
@@ -148,24 +153,14 @@ class ToolchainFactory:
             ]
             proc = self._runner.run(cmd)
             out_size = avif.stat().st_size if avif.is_file() else -1
-            version = self._runner.output([avifenc, "--version"])
 
             if DEBUG:
                 self._dump_probe("probe", cmd, proc, out_size, version)
 
-            out = ((proc.stdout or "") + (proc.stderr or "")).lower()
             if proc.returncode == 0 and out_size > 0:
-                return True, "svt"
+                return True, ", ".join(available)
 
-            # Surface the full failure so the real SVT error/crash is visible.
             self._dump_probe("PROBE FAILED", cmd, proc, out_size, version)
-
-            if (
-                "no codec available" in out
-                or "codec 'none'" in out
-                or not re.search(r"\bsvt\b", version.lower())
-            ):
-                return False, "SVT-AV1 is not linked into libavif (enable AVIF_CODEC_SVT)"
             lines = ((proc.stderr or "") + (proc.stdout or "") or "encode probe failed").strip().splitlines()
             return False, (lines[-1] if lines else "encode probe failed")[:200]
 

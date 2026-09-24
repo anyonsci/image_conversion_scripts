@@ -162,9 +162,10 @@ PYTHONPATH=.. python3 -m convert_to_avif /path/to/photos -q 85 -s 4 --verify
 ### Defaults
 | Setting | Default |
 |---------|---------|
+| Codec (`--codec`) | aom (recommended for low RAM) |
 | Color quality (`-q`) | 85 |
 | Gain-map quality | 85 |
-| Speed (`-s`) | 4 |
+| Speed (`-s`) | 8 |
 | Jobs | 50% of CPUs |
 | Max DSSIM (`--verify`) | 0.002 |
 | Min SSIM (`--verify`) | 0.98 |
