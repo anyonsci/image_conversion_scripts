@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Optional
 
@@ -13,6 +14,31 @@ from .toolchain import Toolchain
 
 class EncodeError(RuntimeError):
     pass
+
+
+def compute_android_compatible_grid(
+    width: int,
+    height: int,
+    max_pixels: int = 8_912_896,
+    max_dim: int = 4096,
+) -> Optional[tuple[int, int]]:
+    """Compute optimal (cols, rows) grid to keep each cell within MIAF Baseline Level <= 5.1
+
+    (<= 8,912,896 pixels and max dimension <= 4096) for Android compatibility.
+    """
+    if width <= 0 or height <= 0:
+        return None
+    if width * height <= max_pixels and width <= max_dim and height <= max_dim:
+        return None
+
+    cols = max(1, math.ceil(width / max_dim))
+    rows = max(1, math.ceil(height / max_dim))
+    while (width / cols) * (height / rows) > max_pixels or (width / cols) > max_dim or (height / rows) > max_dim:
+        if (width / cols) >= (height / rows):
+            cols += 1
+        else:
+            rows += 1
+    return cols, rows
 
 
 class AvifEncoder:
@@ -40,6 +66,54 @@ class AvifEncoder:
             except MediaError as exc:
                 raise EncodeError(str(exc)) from exc
 
+            width = probe.width
+            height = probe.height
+            if (width == 0 or height == 0) and Path(probe.path).is_file():
+                try:
+                    from PIL import Image
+
+                    with Image.open(probe.path) as im:
+                        width, height = im.size
+                except Exception:
+                    pass
+
+            grid = self._settings.grid
+            if grid is None and self._settings.android_compatible:
+                grid = compute_android_compatible_grid(width, height)
+
+            # MIAF YUV420 requires grid image width, height, and cell dimensions to be even numbers
+            if grid is not None and width > 0 and height > 0:
+                if width % 2 != 0 or height % 2 != 0:
+                    even_w = width - (width % 2)
+                    even_h = height - (height % 2)
+                    even_file = tmpdir / f"even_{enc_input.name}"
+                    cropped = False
+                    try:
+                        from PIL import Image
+
+                        with Image.open(enc_input) as im:
+                            im.crop((0, 0, even_w, even_h)).save(even_file)
+                            cropped = True
+                    except Exception:
+                        if self._tools.ffmpeg:
+                            proc_crop = self._runner.run(
+                                [
+                                    self._tools.ffmpeg,
+                                    "-hide_banner",
+                                    "-loglevel",
+                                    "error",
+                                    "-y",
+                                    "-i",
+                                    str(enc_input),
+                                    "-vf",
+                                    f"crop={even_w}:{even_h}:0:0",
+                                    str(even_file),
+                                ]
+                            )
+                            cropped = proc_crop.returncode == 0 and even_file.is_file()
+                    if cropped and even_file.is_file():
+                        enc_input = even_file
+
             speed = self._settings.speed
             # SVT-AV1 requires preset M5 or faster for 8K / high-resolution images (>~20MP).
             if self._settings.codec == "svt" and (
@@ -56,6 +130,7 @@ class AvifEncoder:
                 with_alpha=with_alpha,
                 with_gain_map=probe.has_gain_map,
                 has_icc=probe.has_icc,
+                grid=grid,
             )
             proc = self._runner.run(cmd)
 
@@ -71,6 +146,7 @@ class AvifEncoder:
                         with_alpha=with_alpha,
                         with_gain_map=probe.has_gain_map,
                         has_icc=probe.has_icc,
+                        grid=grid,
                     )
                     proc = self._runner.run(cmd)
 
@@ -78,6 +154,18 @@ class AvifEncoder:
                 if output.exists():
                     output.unlink(missing_ok=True)
                 raise EncodeError(self._extract_error(proc))
+
+            # avifenc drops EXIF/XMP when encoding grid images; restore original metadata
+            if grid is not None and self._tools.exiftool and Path(probe.path).is_file():
+                self._runner.run(
+                    [
+                        self._tools.exiftool,
+                        "-tagsFromFile",
+                        str(probe.path),
+                        "-overwrite_original",
+                        str(output),
+                    ]
+                )
 
     @staticmethod
     def _extract_error(proc) -> str:
@@ -106,6 +194,7 @@ class AvifEncoder:
         with_alpha: bool,
         with_gain_map: bool,
         has_icc: bool = False,
+        grid: Optional[tuple[int, int]] = None,
     ) -> list[str]:
         cmd = [
             self._tools.avifenc,
@@ -121,6 +210,8 @@ class AvifEncoder:
             "-j",
             str(self._threads),
         ]
+        if grid is not None:
+            cmd.extend(["-g", f"{grid[0]}x{grid[1]}"])
         if not has_icc:
             # Use BT.709 matrix (CICP 1/13/1) for standard sRGB images to prevent
             # green-tint shifts on viewers that assume BT.709 matrix coefficients

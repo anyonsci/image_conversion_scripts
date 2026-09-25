@@ -36,6 +36,8 @@ class EncodeSettings:
     quality: int = 85
     gain_quality: int = 85
     speed: int = 8
+    android_compatible: bool = True
+    grid: Optional[tuple[int, int]] = None
 
 
 @dataclass(frozen=True)

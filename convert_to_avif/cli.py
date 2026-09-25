@@ -50,6 +50,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=max(1, (os.cpu_count() or 2) // 2),
         help="Parallel conversions (default: 50%% of CPUs)",
     )
+    parser.add_argument(
+        "--android-compatible",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Ensure full Android compatibility via MIAF Baseline Level <= 5.1 and grid tiling (default: true)",
+    )
+    parser.add_argument(
+        "--grid",
+        help="Explicit grid dimensions MxN (e.g. 2x2). Automatically computed if omitted and --android-compatible is enabled.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Probe and print profiles only")
     parser.add_argument(
         "--verify",
@@ -115,8 +125,22 @@ def main(argv: Optional[list[str]] = None) -> int:
     for line in toolchain.report_lines():
         print(line, flush=True)
 
+    grid_tuple: Optional[tuple[int, int]] = None
+    if args.grid:
+        try:
+            m_str, n_str = args.grid.lower().split("x")
+            grid_tuple = (int(m_str), int(n_str))
+        except Exception:
+            print("ERROR: Invalid --grid format. Expected MxN, e.g. 2x2", file=sys.stderr, flush=True)
+            return 2
+
     encode = EncodeSettings(
-        codec=args.codec, quality=args.quality, gain_quality=args.gain_quality, speed=args.speed
+        codec=args.codec,
+        quality=args.quality,
+        gain_quality=args.gain_quality,
+        speed=args.speed,
+        android_compatible=args.android_compatible,
+        grid=grid_tuple,
     )
     qa = QaSettings(
         verify=args.verify,

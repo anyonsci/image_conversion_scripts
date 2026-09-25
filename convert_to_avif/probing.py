@@ -57,6 +57,13 @@ class ImageProber:
         meta = self._meta.read(path)
         width = int(meta.get("ImageWidth") or meta.get("ExifImageWidth") or 0)
         height = int(meta.get("ImageHeight") or meta.get("ExifImageHeight") or 0)
+        if (width == 0 or height == 0) and path.is_file():
+            try:
+                from PIL import Image
+                with Image.open(path) as im:
+                    width, height = im.size
+            except Exception:
+                pass
         has_gain_map = False
         if kind is ImageKind.JPEG:
             has_gain_map = self._jpeg_has_gain_map(path) or self._meta.blob_contains(
