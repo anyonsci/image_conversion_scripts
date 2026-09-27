@@ -135,6 +135,8 @@ class Converter:
             )
 
         rejected_message = self._quarantine_or_delete(output)
+        if outcome.notes:
+            rejected_message = f"{rejected_message} ({'; '.join(outcome.notes)})"
         return ConvertResult.from_qa(
             src_s,
             out_s,
@@ -265,7 +267,7 @@ class BatchRunner:
         total = len(jobs)
 
         if self._jobs == 1 or self._dry_run:
-            encoder_threads = max(1, os.cpu_count() or 1)
+            encoder_threads = max(1, int(os.environ.get("AVIF_THREADS", "1")))
             converter = Converter(
                 self._tools,
                 self._encode,

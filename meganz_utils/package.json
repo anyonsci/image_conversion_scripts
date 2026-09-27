@@ -1,0 +1,40 @@
+{
+  "name": "meganz-utils",
+  "version": "1.0.0",
+  "description": "Production-ready configurable utility suite for MEGA.nz: AVIF conversion & full-frame thumbnail/preview generation",
+  "main": "index.js",
+  "bin": {
+    "meganz-utils": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js help",
+    "thumbnails": "node index.js thumbnails",
+    "thumbnails:only": "node index.js thumbnails --only-thumbnails",
+    "thumbnails:dry-run": "node index.js thumbnails --dry-run",
+    "convert": "node index.js convert",
+    "convert:once": "node index.js convert --once",
+    "convert:cron": "node index.js convert --cron",
+    "convert:dry-run": "node index.js convert --dry-run",
+    "test": "node test_logic.js"
+  },
+  "keywords": [
+    "mega",
+    "megajs",
+    "avif",
+    "thumbnails",
+    "previews",
+    "image-conversion",
+    "automation",
+    "rclone"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^18.0.3",
+    "megajs": "^1.3.10",
+    "node-cron": "^4.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

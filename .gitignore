@@ -15,6 +15,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!meganz_utils/lib/
 lib64/
 parts/
 sdist/

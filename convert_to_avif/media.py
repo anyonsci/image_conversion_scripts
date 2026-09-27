@@ -50,7 +50,7 @@ class ImageDecoder:
     def _decode_avif(self, src: Path, dst_png: Path) -> None:
         if not self._tools.avifdec:
             raise MediaError("avifdec is required to decode AVIF")
-        proc = self._runner.run([self._tools.avifdec, str(src), str(dst_png)])
+        proc = self._runner.run([self._tools.avifdec, "-j", "1", str(src), str(dst_png)])
         if proc.returncode != 0 or not dst_png.is_file():
             raise MediaError("avifdec failed")
 
@@ -59,6 +59,8 @@ class ImageDecoder:
         proc = self._runner.run(
             [
                 self._tools.ffmpeg,
+                "-threads",
+                "1",
                 "-hide_banner",
                 "-loglevel",
                 "error",
