@@ -63,6 +63,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Dynamically scale AVIF quality based on source image quality/entropy (default: true)",
     )
     parser.add_argument(
+        "--skip-gain-map",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Skip images with Ultra HDR gain maps to preserve original dynamic range and avoid MIAF decode limits (default: true)",
+    )
+    parser.add_argument(
         "--grid",
         help="Explicit grid dimensions MxN (e.g. 2x2). Automatically computed if omitted and --android-compatible is enabled.",
     )
@@ -148,6 +154,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         android_compatible=args.android_compatible,
         grid=grid_tuple,
         adaptive_quality=args.adaptive_quality,
+        skip_gain_map=args.skip_gain_map,
     )
     qa = QaSettings(
         verify=args.verify,

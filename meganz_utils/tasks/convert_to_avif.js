@@ -55,6 +55,30 @@ function resolveHomePath(filePath) {
 }
 
 /**
+ * Markers indicative of an ISO 21496-1 / Adobe / Apple HDR gain map stream inside a JPEG container.
+ */
+const ULTRA_HDR_MARKERS = [
+  Buffer.from('hdrgm:Version'),
+  Buffer.from('hdrgm:version'),
+  Buffer.from('http://ns.adobe.com/hdr-gain-map/'),
+  Buffer.from('HDRGainMapVersion'),
+  Buffer.from('HDRGainMap:HDRGainMapVersion'),
+  Buffer.from('http://ns.apple.com/HDRGainMap/'),
+];
+
+/**
+ * Fast inspection to detect if a JPEG buffer contains an Ultra HDR gain map.
+ * @param {Buffer} buffer
+ * @returns {boolean}
+ */
+function isUltraHdr(buffer) {
+  if (!buffer || buffer.length < 100) return false;
+  const scanLimit = Math.min(buffer.length, 2 * 1024 * 1024);
+  const scanSlice = buffer.subarray(0, scanLimit);
+  return ULTRA_HDR_MARKERS.some((marker) => scanSlice.includes(marker));
+}
+
+/**
  * Quickly validates that the converted AVIF is perceptually similar and structurally
  * identical to the source JPEG before any destructive deletion occurs.
  *
@@ -250,6 +274,19 @@ async function processImage(item, config) {
       }
     }
 
+    // Check for Ultra HDR gain map: skip conversion to retain full camera resolution and OLED HDR pop
+    if (config.skipUltraHdr !== false && isUltraHdr(jpgBuffer)) {
+      logger.info(
+        `Skipping Ultra HDR image "${fileName}" to preserve native dynamic range and full sensor resolution.`
+      );
+      return {
+        status: 'skipped_ultrahdr',
+        fileName,
+        originalSize: jpgBuffer.length,
+        convertedSize: jpgBuffer.length,
+      };
+    }
+
     // Step 2: Write buffer to scratch file
     await fs.promises.writeFile(tempJpgPath, jpgBuffer);
 
@@ -361,7 +398,7 @@ async function processImage(item, config) {
  * Runs a single synchronization pass for JPEG -> AVIF.
  */
 async function runSinglePass(storage, targetFolder, config) {
-  const extensions = config.ext || ['jpg', 'jpeg', 'heic', 'heif'];
+  const extensions = config.ext || ['jpg', 'jpeg'];
   logger.info(`Scanning target folder "${targetFolder.name}" for extensions: [${extensions.join(', ')}]...`);
 
   const files = scanFiles(targetFolder, {
@@ -373,7 +410,7 @@ async function runSinglePass(storage, targetFolder, config) {
 
   if (files.length === 0) {
     logger.info('No candidate image files found to convert.');
-    return { successCount: 0, skippedCount: 0, errorCount: 0 };
+    return { successCount: 0, skippedCount: 0, skippedHdrCount: 0, errorCount: 0 };
   }
 
   const toProcess = config.limit && config.limit > 0 ? files.slice(0, config.limit) : files;
@@ -388,11 +425,12 @@ async function runSinglePass(storage, targetFolder, config) {
     toProcess.forEach((item, idx) => {
       console.log(`  ${idx + 1}. ${item.relativePath} (${formatBytes(item.size)})`);
     });
-    return { successCount: 0, skippedCount: 0, errorCount: 0 };
+    return { successCount: 0, skippedCount: 0, skippedHdrCount: 0, errorCount: 0 };
   }
 
   let successCount = 0;
   let skippedCount = 0;
+  let skippedHdrCount = 0;
   let errorCount = 0;
   let totalOrigBytes = 0;
   let totalConvBytes = 0;
@@ -413,6 +451,8 @@ async function runSinglePass(storage, targetFolder, config) {
         skippedCount++;
         totalOrigBytes += result.originalSize;
         totalConvBytes += result.convertedSize;
+      } else if (result.status === 'skipped_ultrahdr') {
+        skippedHdrCount++;
       }
     } catch (err) {
       errorCount++;
@@ -428,13 +468,16 @@ async function runSinglePass(storage, targetFolder, config) {
   logger.info(`Conversion pass completed in ${durationSec}s:`);
   logger.info(`- Converted successfully: ${successCount}`);
   logger.info(`- Skipped existing: ${skippedCount}`);
+  if (skippedHdrCount > 0) {
+    logger.info(`- Preserved Ultra HDR JPEGs: ${skippedHdrCount}`);
+  }
   logger.info(`- Failed: ${errorCount}`);
   logger.info(`- Original data size: ${formatBytes(totalOrigBytes)}`);
   logger.info(`- Converted data size: ${formatBytes(totalConvBytes)}`);
   logger.info(`- Space saved: ${formatBytes(totalSavedBytes)} (${overallRatio}% reduction)`);
   logger.info(`=======================================================\n`);
 
-  return { successCount, skippedCount, errorCount };
+  return { successCount, skippedCount, skippedHdrCount, errorCount };
 }
 
 /**
@@ -458,6 +501,7 @@ async function runConvertTask(storage, targetFolder, options = {}) {
     jobs: options.jobs || process.env.AVIF_JOBS || '1',
     validate: options.validate !== false,
     minSSIM: options.minSSIM ? parseFloat(options.minSSIM) : 0.85,
+    skipUltraHdr: options.skipUltraHdr !== false,
     cronSchedule: options.schedule || process.env.CRON_SCHEDULE || '0 * * * *',
   };
 

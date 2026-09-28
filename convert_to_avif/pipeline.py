@@ -107,6 +107,12 @@ class Converter:
                 src_bytes=src_bytes, dimensions=dims, duration_sec=time.monotonic() - t0
             )
 
+        if self._encode.skip_gain_map and probe.has_gain_map:
+            return ConvertResult.skipped(
+                src_s, out_s, profile, "Ultra HDR gain map present (preserved original)",
+                src_bytes=src_bytes, dimensions=dims, duration_sec=time.monotonic() - t0
+            )
+
         try:
             self._encoder.encode(probe, output)
         except EncodeError as exc:

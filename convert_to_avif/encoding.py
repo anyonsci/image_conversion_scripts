@@ -126,7 +126,7 @@ class AvifEncoder:
                     pass
 
             grid = self._settings.grid
-            if grid is None and self._settings.android_compatible:
+            if grid is None and self._settings.android_compatible and not probe.has_gain_map:
                 grid = compute_android_compatible_grid(width, height)
 
             # MIAF YUV420 requires grid image width, height, and cell dimensions to be even numbers

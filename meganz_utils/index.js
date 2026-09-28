@@ -72,6 +72,8 @@ Convert Options:
   -s, --speed <num>         AVIF encoder speed 0-10 (default: 8)
   --codec <codec>           Encoder codec: aom (default, lowest RAM), svt, or rav1e
   --min-ssim <num>          Minimum SSIM perceptual similarity score 0-1 (default: 0.85)
+  --skip-ultrahdr           Skip Ultra HDR photos with gain maps to preserve native dynamic range (default: true)
+  --no-skip-ultrahdr        Attempt to convert Ultra HDR photos anyway
   --no-verify               Skip similarity validation before deleting source JPEG
 
 Examples:
@@ -116,6 +118,7 @@ function parseCLI() {
     codec: process.env.AVIF_CODEC || 'aom',
     validate: true,
     minSSIM: process.env.MIN_SSIM ? parseFloat(process.env.MIN_SSIM) : 0.85,
+    skipUltraHdr: true,
     force: false,
     dryRun: false,
     limit: 0,
@@ -196,6 +199,10 @@ function parseCLI() {
       options.adaptiveQuality = true;
     } else if (arg === '--no-adaptive-quality') {
       options.adaptiveQuality = false;
+    } else if (arg === '--no-skip-ultrahdr' || arg === '--no-skip-hdr') {
+      options.skipUltraHdr = false;
+    } else if (arg === '--skip-ultrahdr' || arg === '--skip-hdr') {
+      options.skipUltraHdr = true;
     }
   }
 

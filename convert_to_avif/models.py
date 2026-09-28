@@ -41,6 +41,7 @@ class EncodeSettings:
     android_compatible: bool = True
     grid: Optional[tuple[int, int]] = None
     adaptive_quality: bool = True
+    skip_gain_map: bool = True
 
 
 @dataclass(frozen=True)
