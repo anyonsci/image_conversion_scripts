@@ -79,6 +79,30 @@ function isUltraHdr(buffer) {
 }
 
 /**
+ * Fast inspection to extract width and height from a JPEG buffer without spawning child processes.
+ * @param {Buffer} buffer
+ * @returns {{ width: number, height: number } | null}
+ */
+function getJpegDimensions(buffer) {
+  if (!buffer || buffer.length < 4 || buffer[0] !== 0xFF || buffer[1] !== 0xD8) return null;
+  let offset = 2;
+  while (offset < buffer.length - 8) {
+    if (buffer[offset] !== 0xFF) { offset++; continue; }
+    const marker = buffer[offset + 1];
+    if (marker === 0xC0 || marker === 0xC1 || marker === 0xC2) {
+      const height = buffer.readUInt16BE(offset + 5);
+      const width = buffer.readUInt16BE(offset + 7);
+      if (width > 0 && height > 0) return { width, height };
+    }
+    if (offset + 4 > buffer.length) break;
+    const len = buffer.readUInt16BE(offset + 2);
+    if (len < 2) break;
+    offset += 2 + len;
+  }
+  return null;
+}
+
+/**
  * Quickly validates that the converted AVIF is perceptually similar and structurally
  * identical to the source JPEG before any destructive deletion occurs.
  *
@@ -274,17 +298,28 @@ async function processImage(item, config) {
       }
     }
 
-    // Check for Ultra HDR gain map: skip conversion to retain full camera resolution and OLED HDR pop
+    // Check for Ultra HDR gain map: skip conversion only if image exceeds 8.91MP (MIAF Level 5.1 limit)
+    // because libavif grid tiling strips gain maps, and un-gridded >8.91MP fails hardware decode on Android.
+    // Ultra HDR images <= 8.91MP do NOT require a grid and can be safely converted with gain map intact.
     if (config.skipUltraHdr !== false && isUltraHdr(jpgBuffer)) {
-      logger.info(
-        `Skipping Ultra HDR image "${fileName}" to preserve native dynamic range and full sensor resolution.`
-      );
-      return {
-        status: 'skipped_ultrahdr',
-        fileName,
-        originalSize: jpgBuffer.length,
-        convertedSize: jpgBuffer.length,
-      };
+      const dims = getJpegDimensions(jpgBuffer);
+      const exceedsMiaf = !dims || (dims.width * dims.height > 8912896) || dims.width > 4096 || dims.height > 4096;
+      if (exceedsMiaf) {
+        const dimStr = dims ? `${dims.width}x${dims.height}` : 'unknown dimensions';
+        logger.info(
+          `Skipping Ultra HDR image "${fileName}" (${dimStr} > 8.91MP) to preserve native dynamic range and full sensor resolution.`
+        );
+        return {
+          status: 'skipped_ultrahdr',
+          fileName,
+          originalSize: jpgBuffer.length,
+          convertedSize: jpgBuffer.length,
+        };
+      } else {
+        logger.info(
+          `Ultra HDR image "${fileName}" is <= 8.91MP (${dims.width}x${dims.height}). Grid not required; converting to AVIF with gain map intact...`
+        );
+      }
     }
 
     // Step 2: Write buffer to scratch file

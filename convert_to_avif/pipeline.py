@@ -107,9 +107,17 @@ class Converter:
                 src_bytes=src_bytes, dimensions=dims, duration_sec=time.monotonic() - t0
             )
 
-        if self._encode.skip_gain_map and probe.has_gain_map:
+        is_miaf_level_51 = (
+            probe.width > 0
+            and probe.height > 0
+            and probe.width * probe.height <= 8_912_896
+            and probe.width <= 4096
+            and probe.height <= 4096
+        )
+
+        if self._encode.skip_gain_map and probe.has_gain_map and not is_miaf_level_51:
             return ConvertResult.skipped(
-                src_s, out_s, profile, "Ultra HDR gain map present (preserved original)",
+                src_s, out_s, profile, f"Ultra HDR gain map present ({dims} > 8.91MP MIAF limit; preserved original)",
                 src_bytes=src_bytes, dimensions=dims, duration_sec=time.monotonic() - t0
             )
 
