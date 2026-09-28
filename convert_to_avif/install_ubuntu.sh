@@ -148,6 +148,10 @@ install_apt_packages() {
     libpng-dev
     zlib1g-dev
     libxml2-dev
+    libheif-examples
+    libheif-plugin-libde265
+    libheif-plugin-x265
+    libheif-plugin-ffmpegdec
   )
   run_apt "${pkgs[@]}"
 }
@@ -278,7 +282,7 @@ verify_install() {
   fi
 
   local missing=0
-  for cmd in python3 ffmpeg exiftool avifenc avifdec; do
+  for cmd in python3 ffmpeg exiftool avifenc avifdec heif-convert; do
     if command -v "$cmd" >/dev/null 2>&1; then
       printf '  OK  %s -> %s\n' "$cmd" "$(command -v "$cmd")"
     else
