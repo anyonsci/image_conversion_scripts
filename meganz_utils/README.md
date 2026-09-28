@@ -102,9 +102,16 @@ node index.js convert --path="/Photos/Vacation" --cron --schedule="*/30 * * * *"
 | `--cron` | Run continuously on a schedule | `false` |
 | `--schedule <expr>` | Cron expression | `"0 * * * *"` |
 | `--run-on-start` | Run immediately when daemon starts | `false` |
-| `-q, --quality <num>`| AVIF quality (0-100) | `85` |
+| `-q, --quality <num>`| Base AVIF quality (0-100) | `85` |
+| `--adaptive-quality` | Dynamically scale quality (68-85) based on source JPEG quality/entropy | `true` |
+| `--no-adaptive-quality` | Force fixed `-q` quality without adaptive scaling | `false` |
 | `-s, --speed <num>`  | AVIF encoder speed (0-10) | `8` |
 | `--codec <codec>`    | Encoder codec (`aom`, `svt`, `rav1e`) | `aom` |
+| `--min-ssim <num>`   | Minimum SSIM threshold before JPEG deletion | `0.85` |
+| `--no-verify`        | Skip similarity verification | `false` |
+
+> [!IMPORTANT]
+> **100% AVIF Standardization (No Fallback)**: All target JPEG images are converted to AVIF to ensure complete format consistency across the cloud library. With `--adaptive-quality`, heavily compressed or high-noise photos have their target quality intelligently lowered so they achieve compression savings without artifact amplification, while clean camera shots retain maximum visual fidelity. Original JPEGs are deleted only after verified upload.
 
 ---
 

@@ -57,6 +57,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ensure full Android compatibility via MIAF Baseline Level <= 5.1 and grid tiling (default: true)",
     )
     parser.add_argument(
+        "--adaptive-quality",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Dynamically scale AVIF quality based on source image quality/entropy (default: true)",
+    )
+    parser.add_argument(
         "--grid",
         help="Explicit grid dimensions MxN (e.g. 2x2). Automatically computed if omitted and --android-compatible is enabled.",
     )
@@ -141,6 +147,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         speed=args.speed,
         android_compatible=args.android_compatible,
         grid=grid_tuple,
+        adaptive_quality=args.adaptive_quality,
     )
     qa = QaSettings(
         verify=args.verify,

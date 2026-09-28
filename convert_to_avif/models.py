@@ -12,6 +12,7 @@ class ImageKind(str, Enum):
     PNG = "png"
     WEBP = "webp"
     AVIF = "avif"
+    HEIC = "heic"
     UNKNOWN = "unknown"
 
 
@@ -20,6 +21,7 @@ class EncodeProfile(str, Enum):
     JPEG = "jpeg"
     PNG = "png"
     WEBP = "webp"
+    HEIC = "heic"
     UNSUPPORTED = "unsupported"
 
 
@@ -38,6 +40,7 @@ class EncodeSettings:
     speed: int = 8
     android_compatible: bool = True
     grid: Optional[tuple[int, int]] = None
+    adaptive_quality: bool = True
 
 
 @dataclass(frozen=True)
@@ -65,6 +68,8 @@ class ProbeResult:
     width: int = 0
     height: int = 0
     size_bytes: int = 0
+    estimated_quality: Optional[int] = None
+    bpp: float = 0.0
 
     @property
     def profile(self) -> EncodeProfile:
@@ -76,6 +81,8 @@ class ProbeResult:
             return EncodeProfile.PNG
         if self.kind is ImageKind.WEBP:
             return EncodeProfile.WEBP
+        if self.kind is ImageKind.HEIC:
+            return EncodeProfile.HEIC
         return EncodeProfile.UNSUPPORTED
 
 

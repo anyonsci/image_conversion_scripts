@@ -52,7 +52,7 @@ function scanJpegFilesRecursively(folder, relativePath = '') {
 
     if (item.directory) {
       results.push(...scanJpegFilesRecursively(item, itemRelativePath));
-    } else if (item.name && /\.(jpe?g)$/i.test(item.name)) {
+    } else if (item.name && /\.(jpe?g|heic|heif)$/i.test(item.name)) {
       results.push({
         file: item,
         parentFolder: folder,
@@ -84,6 +84,8 @@ const mockRoot = {
           children: [
             { name: 'vacation.JPEG', directory: false, size: 2048 },
             { name: 'beach.JPG', directory: false, size: 4096 },
+            { name: 'live.HEIC', directory: false, size: 3000 },
+            { name: 'burst.heif', directory: false, size: 3500 },
             { name: 'logo.png', directory: false, size: 512 },
             {
               name: 'Trip',
@@ -130,16 +132,18 @@ console.log('✔ Test 3 passed: Non-existent folder error throwing');
 
 // Test 4: Recursive scan from /Photos
 const foundFromPhotos = scanJpegFilesRecursively(photos);
-assert.strictEqual(foundFromPhotos.length, 4);
+assert.strictEqual(foundFromPhotos.length, 6);
 
 const fileNames = foundFromPhotos.map((f) => f.fileName);
 assert.ok(fileNames.includes('cover.jpg'));
 assert.ok(fileNames.includes('vacation.JPEG'));
 assert.ok(fileNames.includes('beach.JPG'));
+assert.ok(fileNames.includes('live.HEIC'));
+assert.ok(fileNames.includes('burst.heif'));
 assert.ok(fileNames.includes('mountain.jpeg'));
 assert.ok(!fileNames.includes('notes.txt'));
 assert.ok(!fileNames.includes('logo.png'));
-console.log('✔ Test 4 passed: Recursive JPEG discovery (case-insensitive)');
+console.log('✔ Test 4 passed: Recursive JPEG/HEIC discovery (case-insensitive)');
 
 // Test 5: Relative paths and parent links
 const mountain = foundFromPhotos.find((f) => f.fileName === 'mountain.jpeg');

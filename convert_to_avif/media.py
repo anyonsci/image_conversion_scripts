@@ -32,6 +32,9 @@ class ImageDecoder:
         if kind is ImageKind.AVIF:
             self._decode_avif(src, dst_png)
             return
+        if kind is ImageKind.HEIC:
+            self._heic_still(src, dst_png)
+            return
         if self._tools.ffmpeg:
             self._ffmpeg_still(src, dst_png)
             return
@@ -45,7 +48,27 @@ class ImageDecoder:
             png = tmpdir / f"{src.stem}.png"
             self._ffmpeg_still(src, png)
             return png, True
+        if kind is ImageKind.HEIC:
+            png = tmpdir / f"{src.stem}.png"
+            self._heic_still(src, png)
+            return png, True
         return src, kind is ImageKind.PNG
+
+    def _heic_still(self, src: Path, dst_png: Path) -> None:
+        if self._tools.heif_convert:
+            proc = self._runner.run(
+                [self._tools.heif_convert, "--codec-threads", "1", str(src), str(dst_png)]
+            )
+            if proc.returncode == 0 and dst_png.is_file():
+                return
+        if self._tools.ffmpeg:
+            try:
+                self._ffmpeg_still(src, dst_png)
+                if dst_png.is_file():
+                    return
+            except MediaError:
+                pass
+        self._pillow_still(src, dst_png)
 
     def _decode_avif(self, src: Path, dst_png: Path) -> None:
         if not self._tools.avifdec:

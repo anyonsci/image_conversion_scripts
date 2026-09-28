@@ -48,7 +48,7 @@ Commands:
 
 Global Options:
   -p, --path <target>       Target folder path on MEGA (default: env TARGET_PATH or "/")
-  -e, --ext <extensions>    Comma-separated extensions to filter (e.g. "avif" or "jpg,jpeg")
+  -e, --ext <extensions>    Comma-separated extensions to filter (e.g. "jpg,jpeg,heic,heif" or "avif")
   --rclone-remote <remote>  Rclone remote name to load credentials from (default: "mega1")
   --email <email>           Override MEGA account email
   --password <password>     Override MEGA account password
@@ -67,6 +67,8 @@ Convert Options:
   --schedule <pattern>      Cron schedule pattern (default: "0 * * * *" for hourly)
   --run-on-start            Trigger immediate run upon starting daemon
   -q, --quality <num>       AVIF quality (default: 85)
+  --adaptive-quality        Adaptively scale AVIF quality based on source JPEG quality/entropy (default: true)
+  --no-adaptive-quality     Disable adaptive quality and use fixed -q for all files
   -s, --speed <num>         AVIF encoder speed 0-10 (default: 8)
   --codec <codec>           Encoder codec: aom (default, lowest RAM), svt, or rav1e
   --min-ssim <num>          Minimum SSIM perceptual similarity score 0-1 (default: 0.85)
@@ -76,7 +78,7 @@ Examples:
   # Upload thumbnails for local AVIF files in remote folder "mummy_parna_26":
   node index.js thumbnails --path="mummy_parna_26" --local-dir="/home/ubuntu/ws/parna_avif"
 
-  # Convert remote JPEGs across entire drive starting from root:
+  # Convert remote JPEGs / HEIC files across entire drive starting from root:
   node index.js convert --path="/"
 
   # Convert remote JPEGs with quick validation (default) and limit 5 files:
@@ -108,6 +110,8 @@ function parseCLI() {
     schedule: process.env.CRON_SCHEDULE || null,
     runOnStart: false,
     quality: process.env.AVIF_QUALITY || '85',
+    adaptiveQuality: true,
+    jobs: process.env.AVIF_JOBS || '1',
     speed: process.env.AVIF_SPEED || '8',
     codec: process.env.AVIF_CODEC || 'aom',
     validate: true,
@@ -174,6 +178,10 @@ function parseCLI() {
       options.speed = args[++i];
     } else if (arg.startsWith('--speed=')) {
       options.speed = arg.split('=')[1];
+    } else if (arg === '-j' || arg === '--jobs') {
+      options.jobs = args[++i];
+    } else if (arg.startsWith('--jobs=')) {
+      options.jobs = arg.split('=')[1];
     } else if (arg === '--codec') {
       options.codec = args[++i];
     } else if (arg.startsWith('--codec=')) {
@@ -184,6 +192,10 @@ function parseCLI() {
       options.minSSIM = parseFloat(arg.split('=')[1]);
     } else if (arg === '--no-verify' || arg === '--skip-validation') {
       options.validate = false;
+    } else if (arg === '--adaptive-quality') {
+      options.adaptiveQuality = true;
+    } else if (arg === '--no-adaptive-quality') {
+      options.adaptiveQuality = false;
     }
   }
 

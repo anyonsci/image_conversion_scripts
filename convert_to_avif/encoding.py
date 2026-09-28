@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from .media import ImageDecoder, MediaError, TemporaryWorkspace
-from .models import EncodeSettings, ProbeResult
+from .models import EncodeSettings, ImageKind, ProbeResult
 from .process import CommandRunner
 from .toolchain import Toolchain
 
@@ -39,6 +39,54 @@ def compute_android_compatible_grid(
         else:
             rows += 1
     return cols, rows
+
+
+def compute_adaptive_quality(probe: ProbeResult, base_quality: int) -> tuple[int, str]:
+    """Compute optimal AVIF quality based on source format, estimated JPEG quality, and BPP.
+
+    Prevents file size inflation when transcoding pre-compressed lossy JPEGs
+    while preserving high visual fidelity for clean/camera originals.
+    """
+    if probe.kind != ImageKind.JPEG:
+        return base_quality, f"lossless/non-jpeg source, using base quality {base_quality}"
+
+    q_src = probe.estimated_quality
+    bpp = probe.bpp
+
+    reason_parts: list[str] = []
+    if q_src is not None:
+        reason_parts.append(f"source JPEG Q~{q_src}")
+        if q_src >= 92:
+            target_q = min(base_quality, 85)
+        elif q_src >= 86:
+            target_q = min(base_quality, 82)
+        elif q_src >= 78:
+            target_q = min(base_quality, 77)
+        elif q_src >= 70:
+            target_q = min(base_quality, 73)
+        else:
+            target_q = min(base_quality, 68)
+    else:
+        reason_parts.append("source JPEG Q unknown")
+        if bpp >= 2.0:
+            target_q = base_quality
+        elif bpp >= 1.2:
+            target_q = min(base_quality, 80)
+        elif bpp >= 0.8:
+            target_q = min(base_quality, 75)
+        else:
+            target_q = min(base_quality, 70)
+
+    if bpp > 0:
+        reason_parts.append(f"BPP={bpp:.2f}")
+        # Entropy safety cap to prevent bloat on noisy or heavily compressed files
+        if bpp < 0.6:
+            target_q = min(target_q, 70)
+        elif bpp < 1.0:
+            target_q = min(target_q, 76)
+
+    final_q = max(60, min(85, target_q))
+    return final_q, ", ".join(reason_parts)
 
 
 class AvifEncoder:
@@ -123,10 +171,19 @@ class AvifEncoder:
             ):
                 speed = max(speed, 5)
 
+            if self._settings.adaptive_quality:
+                quality, _ = compute_adaptive_quality(probe, self._settings.quality)
+                gain_quality = min(quality, self._settings.gain_quality)
+            else:
+                quality = self._settings.quality
+                gain_quality = self._settings.gain_quality
+
             cmd = self._build_command(
                 enc_input,
                 output,
                 speed=speed,
+                quality=quality,
+                gain_quality=gain_quality,
                 with_alpha=with_alpha,
                 with_gain_map=probe.has_gain_map,
                 has_icc=probe.has_icc,
@@ -143,6 +200,8 @@ class AvifEncoder:
                         enc_input,
                         output,
                         speed=speed,
+                        quality=quality,
+                        gain_quality=gain_quality,
                         with_alpha=with_alpha,
                         with_gain_map=probe.has_gain_map,
                         has_icc=probe.has_icc,
@@ -155,8 +214,8 @@ class AvifEncoder:
                     output.unlink(missing_ok=True)
                 raise EncodeError(self._extract_error(proc))
 
-            # avifenc drops EXIF/XMP when encoding grid images; restore original metadata
-            if grid is not None and self._tools.exiftool and Path(probe.path).is_file():
+            # Restore original metadata if grid encoding or rasterized intermediate (HEIC, WEBP) was used
+            if (grid is not None or enc_input != Path(probe.path)) and self._tools.exiftool and Path(probe.path).is_file():
                 self._runner.run(
                     [
                         self._tools.exiftool,
@@ -191,6 +250,8 @@ class AvifEncoder:
         output: Path,
         *,
         speed: int,
+        quality: int,
+        gain_quality: int,
         with_alpha: bool,
         with_gain_map: bool,
         has_icc: bool = False,
@@ -204,7 +265,7 @@ class AvifEncoder:
             "--yuv",
             "420",
             "-q",
-            str(self._settings.quality),
+            str(quality),
             "-s",
             str(speed),
             "-j",
@@ -218,8 +279,8 @@ class AvifEncoder:
             # instead of JPEG's default BT.601 (matrix 6).
             cmd.extend(["--cicp", "1/13/1"])
         if with_alpha:
-            cmd.extend(["--qalpha", str(self._settings.quality)])
+            cmd.extend(["--qalpha", str(quality)])
         if with_gain_map and self._tools.has_qgain_map:
-            cmd.extend(["--qgain-map", str(self._settings.gain_quality)])
+            cmd.extend(["--qgain-map", str(gain_quality)])
         cmd.extend(["--no-overwrite", str(input_path), str(output)])
         return cmd

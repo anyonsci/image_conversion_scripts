@@ -44,6 +44,7 @@ class Toolchain:
     exiftool: Optional[str] = None
     dssim: Optional[str] = None
     ffmpeg: Optional[str] = None
+    heif_convert: Optional[str] = None
     has_qgain_map: bool = False
     has_tonemap: bool = False
     has_encoder: bool = False
@@ -62,7 +63,7 @@ class Toolchain:
             if self.has_qgain_map
             else "NO (SDR-only; rebuild libavif with gain maps)"
         )
-        return [
+        lines = [
             f"avifenc:          {self.avifenc}",
             f"  encoder:        {self.encoder_note or ('yes' if self.has_encoder else 'NO')}",
             f"  gain-map flag:  {gain}",
@@ -72,6 +73,9 @@ class Toolchain:
             f"dssim:            {self.dssim or 'missing'}",
             f"ffmpeg:           {self.ffmpeg or 'missing'}",
         ]
+        if self.heif_convert:
+            lines.append(f"heif-convert:     {self.heif_convert}")
+        return lines
 
 
 class ToolchainFactory:
@@ -102,6 +106,7 @@ class ToolchainFactory:
             exiftool=self._which("EXIFTOOL", "exiftool"),
             dssim=self._which("DSSIM", "dssim"),
             ffmpeg=self._which("FFMPEG", "ffmpeg"),
+            heif_convert=self._which("HEIF_CONVERT", "heif-convert"),
             has_qgain_map=has_qgain,
             has_tonemap=has_tonemap,
             has_encoder=has_encoder,

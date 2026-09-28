@@ -163,7 +163,8 @@ PYTHONPATH=.. python3 -m convert_to_avif /path/to/photos -q 85 -s 4 --verify
 | Setting | Default |
 |---------|---------|
 | Codec (`--codec`) | aom (recommended for low RAM) |
-| Color quality (`-q`) | 85 |
+| Color quality (`-q`) | 85 (base quality) |
+| Adaptive quality (`--adaptive-quality`) | True (scales 68-85 based on JPEG DQT & BPP) |
 | Gain-map quality | 85 |
 | Speed (`-s`) | 8 |
 | Jobs | 50% of CPUs |

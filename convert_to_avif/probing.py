@@ -46,6 +46,43 @@ class MetadataReader:
         return any(needle in blob for needle in needles)
 
 
+STD_LUM_QTABLE = (
+    16, 11, 10, 16, 24, 40, 51, 61,
+    12, 12, 14, 19, 26, 58, 60, 55,
+    14, 13, 16, 24, 40, 57, 69, 56,
+    14, 17, 22, 29, 51, 87, 80, 62,
+    18, 22, 37, 56, 68, 109, 103, 77,
+    24, 35, 55, 64, 81, 104, 113, 92,
+    49, 64, 78, 87, 103, 121, 120, 101,
+    72, 92, 95, 98, 112, 100, 103, 99,
+)
+
+
+def estimate_jpeg_quality(path: Path) -> Optional[int]:
+    """Estimate JPEG quality factor (1-100) from DQT luminance quantization table."""
+    try:
+        from PIL import Image
+
+        with Image.open(path) as im:
+            if hasattr(im, "quantization") and im.quantization and 0 in im.quantization:
+                qtable = im.quantization[0]
+                diffs: list[float] = []
+                for i in range(min(len(STD_LUM_QTABLE), len(qtable))):
+                    if STD_LUM_QTABLE[i] > 0:
+                        scale = (qtable[i] * 100.0) / STD_LUM_QTABLE[i]
+                        if scale <= 100:
+                            q = (200.0 - scale) / 2.0
+                        else:
+                            q = 5000.0 / scale
+                        diffs.append(q)
+                if diffs:
+                    diffs.sort()
+                    return max(1, min(100, round(diffs[len(diffs) // 2])))
+    except Exception:
+        pass
+    return None
+
+
 class ImageProber:
     """Classify an image and extract archival-relevant attributes."""
 
@@ -65,10 +102,16 @@ class ImageProber:
             except Exception:
                 pass
         has_gain_map = False
+        estimated_quality = None
         if kind is ImageKind.JPEG:
             has_gain_map = self._jpeg_has_gain_map(path) or self._meta.blob_contains(
                 meta, GAINMAP_META_HINTS
             )
+            estimated_quality = estimate_jpeg_quality(path)
+
+        size_bytes = path.stat().st_size if path.is_file() else 0
+        bpp = (size_bytes * 8.0) / (width * height) if (width > 0 and height > 0) else 0.0
+
         return ProbeResult(
             path=str(path),
             kind=kind,
@@ -77,7 +120,9 @@ class ImageProber:
             has_icc=self._meta.has_any(meta, ICC_HINT_KEYS),
             width=width,
             height=height,
-            size_bytes=path.stat().st_size,
+            size_bytes=size_bytes,
+            estimated_quality=estimated_quality,
+            bpp=bpp,
         )
 
     @staticmethod
@@ -96,6 +141,11 @@ class ImageProber:
             return ImageKind.WEBP
         if path.suffix.lower() == ".avif":
             return ImageKind.AVIF
+        if len(header) >= 12 and header[4:8] == b"ftyp" and any(
+            header[8:12].startswith(b)
+            for b in (b"heic", b"heix", b"hevc", b"heim", b"heis", b"mif1", b"msf1")
+        ):
+            return ImageKind.HEIC
 
         ext = path.suffix.lower()
         return {
@@ -104,6 +154,8 @@ class ImageProber:
             ".png": ImageKind.PNG,
             ".webp": ImageKind.WEBP,
             ".avif": ImageKind.AVIF,
+            ".heic": ImageKind.HEIC,
+            ".heif": ImageKind.HEIC,
         }.get(ext, ImageKind.UNKNOWN)
 
     @staticmethod

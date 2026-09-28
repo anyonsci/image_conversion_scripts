@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp"})
+IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"})
 
 # ISO Ultra HDR / Adobe gain map and Apple HDR gain map XMP markers
 GAINMAP_MARKERS = (

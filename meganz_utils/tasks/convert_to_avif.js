@@ -127,7 +127,18 @@ async function validateConversion({
         origHeight = parseInt(parts[1], 10);
       }
     } catch (probeErr) {
-      logger.warn(`Could not probe source JPEG dimensions: ${probeErr.message}`);
+      try {
+        const exifRes = await execPromise(
+          `exiftool -s3 -ImageWidth -ImageHeight "${sourceJpgPath}"`
+        );
+        const lines = exifRes.stdout.trim().split(/\s+/);
+        if (lines.length >= 2) {
+          origWidth = parseInt(lines[0], 10);
+          origHeight = parseInt(lines[1], 10);
+        }
+      } catch (exifErr) {
+        logger.warn(`Could not probe source image dimensions: ${exifErr.message}`);
+      }
     }
 
     // Dimension match verification (allow 1px adjustment for MIAF grid even-dimension requirement)
@@ -190,7 +201,7 @@ async function validateConversion({
  */
 async function processImage(item, config) {
   const { file, parentFolder, relativePath, name: fileName } = item;
-  const avifFileName = fileName.replace(/\.(jpe?g)$/i, '.avif');
+  const avifFileName = fileName.replace(/\.(jpe?g|heic|heif)$/i, '.avif');
 
   // Check if an AVIF version already exists in the same MEGA parent folder
   const existingAvif = parentFolder.children
@@ -199,10 +210,10 @@ async function processImage(item, config) {
 
   if (existingAvif && existingAvif.size > 1000 && !config.force) {
     logger.info(
-      `AVIF version "${avifFileName}" already exists in parent folder (${formatBytes(existingAvif.size)}). Cleaning up residual JPEG "${fileName}"...`
+      `AVIF version "${avifFileName}" already exists in parent folder (${formatBytes(existingAvif.size)}). Cleaning up residual original "${fileName}"...`
     );
     await file.delete();
-    logger.success(`Removed residual JPEG "${fileName}" from MEGA.`);
+    logger.success(`Removed residual original "${fileName}" from MEGA.`);
     return {
       status: 'skipped_existing',
       fileName,
@@ -214,7 +225,7 @@ async function processImage(item, config) {
 
   const sanitizedRelPath = relativePath.replace(/^\/+/, '');
   const tempJpgPath = path.join(config.tempBaseDir, sanitizedRelPath);
-  const tempAvifPath = tempJpgPath.replace(/\.(jpe?g)$/i, '.avif');
+  const tempAvifPath = tempJpgPath.replace(/\.(jpe?g|heic|heif)$/i, '.avif');
   const tempThumbPath = tempJpgPath + '.thumb.jpg';
   const tempPrevPath = tempJpgPath + '.prev.jpg';
 
@@ -223,11 +234,20 @@ async function processImage(item, config) {
   try {
     await fs.promises.mkdir(path.dirname(tempJpgPath), { recursive: true });
 
-    // Step 1: Download JPEG buffer
+    // Step 1: Download image buffer with retry
     logger.info(`Downloading in-memory Buffer for "${fileName}"...`);
-    const jpgBuffer = await file.downloadBuffer();
-    if (!jpgBuffer || jpgBuffer.length === 0) {
-      throw new Error(`Downloaded buffer is empty for "${fileName}"`);
+    let jpgBuffer = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        jpgBuffer = await file.downloadBuffer();
+        if (jpgBuffer && jpgBuffer.length > 0) break;
+        throw new Error('Downloaded buffer is empty');
+      } catch (err) {
+        if (attempt === 3) throw err;
+        const delay = attempt * 2000;
+        logger.warn(`Download failed for "${fileName}" (${err.message}), retrying in ${delay}ms (attempt ${attempt}/3)...`);
+        await new Promise((r) => setTimeout(r, delay));
+      }
     }
 
     // Step 2: Write buffer to scratch file
@@ -235,7 +255,8 @@ async function processImage(item, config) {
 
     // Step 3: Run convert_to_avif command
     await fs.promises.mkdir(path.dirname(config.logFilePath), { recursive: true });
-    const conversionCmd = `set -o pipefail; "${config.convertScriptPath}" "${tempJpgPath}" -o "${tempAvifPath}" --codec ${config.codec} -s ${config.speed} -q ${config.quality} -j ${config.jobs} 2>&1 | tee -a "${config.logFilePath}"`;
+    const adaptiveFlag = config.adaptiveQuality !== false ? '--adaptive-quality' : '--no-adaptive-quality';
+    const conversionCmd = `set -o pipefail; "${config.convertScriptPath}" "${tempJpgPath}" -o "${tempAvifPath}" --codec ${config.codec} -s ${config.speed} -q ${config.quality} ${adaptiveFlag} -j ${config.jobs} 2>&1 | tee -a "${config.logFilePath}"`;
 
     logger.info(`Running convert_to_avif for "${fileName}"...`);
     await execPromise(conversionCmd, { shell: '/bin/bash' });
@@ -255,15 +276,27 @@ async function processImage(item, config) {
       `Converted "${fileName}": ${formatBytes(jpgBuffer.length)} -> ${formatBytes(avifBuffer.length)} (${compressionRatio}% reduction)`
     );
 
-    // Step 4: Generate high-quality thumbnail (320px) and preview (1600px) from the source JPEG directly
+    // Step 4: Generate high-quality thumbnail (320px) and preview (1600px)
     let thumbBuffer = null;
     let previewBuffer = null;
     try {
-      await execPromise(
-        `ffmpeg -threads 1 -y -v error -i "${tempJpgPath}" \
-          -vf "scale=320:320:force_original_aspect_ratio=decrease" -q:v 2 -update 1 "${tempThumbPath}" \
-          -vf "scale='min(1600,iw)':'min(1600,ih)':force_original_aspect_ratio=decrease" -q:v 2 -update 1 "${tempPrevPath}"`
-      );
+      const isHeic = /\.(heic|heif)$/i.test(tempJpgPath);
+      if (isHeic) {
+        const tempDecodedPath = tempJpgPath + '.raw.jpg';
+        await execPromise(`heif-convert --codec-threads 1 -q 95 "${tempJpgPath}" "${tempDecodedPath}"`);
+        await execPromise(
+          `ffmpeg -threads 1 -y -v error -i "${tempDecodedPath}" \
+            -vf "scale=320:320:force_original_aspect_ratio=decrease" -q:v 2 -update 1 "${tempThumbPath}" \
+            -vf "scale='min(1600,iw)':'min(1600,ih)':force_original_aspect_ratio=decrease" -q:v 2 -update 1 "${tempPrevPath}"`
+        );
+        fs.promises.unlink(tempDecodedPath).catch(() => {});
+      } else {
+        await execPromise(
+          `ffmpeg -threads 1 -y -v error -i "${tempJpgPath}" \
+            -vf "scale=320:320:force_original_aspect_ratio=decrease" -q:v 2 -update 1 "${tempThumbPath}" \
+            -vf "scale='min(1600,iw)':'min(1600,ih)':force_original_aspect_ratio=decrease" -q:v 2 -update 1 "${tempPrevPath}"`
+        );
+      }
       thumbBuffer = await fs.promises.readFile(tempThumbPath);
       previewBuffer = await fs.promises.readFile(tempPrevPath);
     } catch (thumbErr) {
@@ -328,7 +361,7 @@ async function processImage(item, config) {
  * Runs a single synchronization pass for JPEG -> AVIF.
  */
 async function runSinglePass(storage, targetFolder, config) {
-  const extensions = config.ext || ['jpg', 'jpeg'];
+  const extensions = config.ext || ['jpg', 'jpeg', 'heic', 'heif'];
   logger.info(`Scanning target folder "${targetFolder.name}" for extensions: [${extensions.join(', ')}]...`);
 
   const files = scanFiles(targetFolder, {
@@ -336,10 +369,10 @@ async function runSinglePass(storage, targetFolder, config) {
     recursive: config.recursive !== false,
   });
 
-  logger.info(`Found ${files.length} JPEG files in target directory.`);
+  logger.info(`Found ${files.length} candidate image files in target directory.`);
 
   if (files.length === 0) {
-    logger.info('No JPEG files found to convert.');
+    logger.info('No candidate image files found to convert.');
     return { successCount: 0, skippedCount: 0, errorCount: 0 };
   }
 
