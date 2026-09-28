@@ -329,8 +329,8 @@ async function processImage(item, config) {
     await fs.promises.mkdir(path.dirname(config.logFilePath), { recursive: true });
     const adaptiveFlag = config.adaptiveQuality !== false ? '--adaptive-quality' : '--no-adaptive-quality';
     const conversionCmd = `set -o pipefail; "${config.convertScriptPath}" "${tempJpgPath}" -o "${tempAvifPath}" --codec ${config.codec} -s ${config.speed} -q ${config.quality} ${adaptiveFlag} -j ${config.jobs} 2>&1 | tee -a "${config.logFilePath}"`;
-
-    logger.info(`Running convert_to_avif for "${fileName}"...`);
+    const qLabel = config.adaptiveQuality !== false ? `auto-quality (base: ${config.quality})` : `fixed q=${config.quality}`;
+    logger.info(`Running convert_to_avif for "${fileName}" [${qLabel}]...`);
     await execPromise(conversionCmd, { shell: '/bin/bash' });
 
     if (!fs.existsSync(tempAvifPath)) {

@@ -118,6 +118,8 @@ class ConvertResult:
     dssim: Optional[float] = None
     ssim: Optional[float] = None
     qa: list[str] = field(default_factory=list)
+    effective_q: Optional[int] = None
+    q_reason: str = ""
 
     @classmethod
     def skipped(
@@ -179,6 +181,8 @@ class ConvertResult:
         duration_sec: float = 0.0,
         qa: QaOutcome,
         rejected_message: str,
+        effective_q: Optional[int] = None,
+        q_reason: str = "",
     ) -> "ConvertResult":
         if qa.ok:
             return cls(
@@ -195,6 +199,8 @@ class ConvertResult:
                 dssim=qa.dssim,
                 ssim=qa.ssim,
                 qa=qa.notes,
+                effective_q=effective_q,
+                q_reason=q_reason,
             )
         return cls(
             source=source,
@@ -210,6 +216,8 @@ class ConvertResult:
             dssim=qa.dssim,
             ssim=qa.ssim,
             qa=qa.notes,
+            effective_q=effective_q,
+            q_reason=q_reason,
         )
 
     def to_dict(self) -> dict[str, Any]:

@@ -55,37 +55,37 @@ def compute_adaptive_quality(probe: ProbeResult, base_quality: int) -> tuple[int
 
     reason_parts: list[str] = []
     if q_src is not None:
-        reason_parts.append(f"source JPEG Q~{q_src}")
+        reason_parts.append(f"src Q~{q_src}")
         if q_src >= 92:
-            target_q = min(base_quality, 85)
+            target_q = min(base_quality, 76)
         elif q_src >= 86:
-            target_q = min(base_quality, 82)
-        elif q_src >= 78:
-            target_q = min(base_quality, 77)
-        elif q_src >= 70:
             target_q = min(base_quality, 73)
-        else:
-            target_q = min(base_quality, 68)
-    else:
-        reason_parts.append("source JPEG Q unknown")
-        if bpp >= 2.0:
-            target_q = base_quality
-        elif bpp >= 1.2:
-            target_q = min(base_quality, 80)
-        elif bpp >= 0.8:
-            target_q = min(base_quality, 75)
-        else:
+        elif q_src >= 78:
             target_q = min(base_quality, 70)
+        elif q_src >= 70:
+            target_q = min(base_quality, 67)
+        else:
+            target_q = min(base_quality, 64)
+    else:
+        reason_parts.append("src Q unknown")
+        if bpp >= 2.0:
+            target_q = min(base_quality, 76)
+        elif bpp >= 1.2:
+            target_q = min(base_quality, 73)
+        elif bpp >= 0.8:
+            target_q = min(base_quality, 70)
+        else:
+            target_q = min(base_quality, 66)
 
     if bpp > 0:
         reason_parts.append(f"BPP={bpp:.2f}")
         # Entropy safety cap to prevent bloat on noisy or heavily compressed files
         if bpp < 0.6:
-            target_q = min(target_q, 70)
+            target_q = min(target_q, 68)
         elif bpp < 1.0:
-            target_q = min(target_q, 76)
+            target_q = min(target_q, 72)
 
-    final_q = max(60, min(85, target_q))
+    final_q = max(55, min(base_quality, target_q))
     return final_q, ", ".join(reason_parts)
 
 
@@ -104,7 +104,7 @@ class AvifEncoder:
         self._decoder = decoder or ImageDecoder(toolchain, self._runner)
         self._threads = max(1, threads)
 
-    def encode(self, probe: ProbeResult, output: Path) -> None:
+    def encode(self, probe: ProbeResult, output: Path) -> tuple[int, str]:
         output.parent.mkdir(parents=True, exist_ok=True)
         with TemporaryWorkspace("avifenc_in_") as tmpdir:
             try:
@@ -172,10 +172,11 @@ class AvifEncoder:
                 speed = max(speed, 5)
 
             if self._settings.adaptive_quality:
-                quality, _ = compute_adaptive_quality(probe, self._settings.quality)
+                quality, reason = compute_adaptive_quality(probe, self._settings.quality)
                 gain_quality = min(quality, self._settings.gain_quality)
             else:
                 quality = self._settings.quality
+                reason = "fixed"
                 gain_quality = self._settings.gain_quality
 
             cmd = self._build_command(
@@ -225,6 +226,8 @@ class AvifEncoder:
                         str(output),
                     ]
                 )
+
+            return quality, reason
 
     @staticmethod
     def _extract_error(proc) -> str:

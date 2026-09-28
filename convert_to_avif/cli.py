@@ -202,7 +202,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     else:
         print(f"Files:  {len(to_convert)} to process", flush=True)
     print(f"Jobs:   {args.jobs} worker(s)  verify={qa.verify}", flush=True)
-    print(f"Encode: codec={encode.codec} q={encode.quality} qgain={encode.gain_quality} speed={encode.speed}", flush=True)
+    adaptive_str = " [auto-quality=ON]" if encode.adaptive_quality else " [fixed quality]"
+    print(f"Encode: codec={encode.codec} q={encode.quality}{adaptive_str} qgain={encode.gain_quality} speed={encode.speed}", flush=True)
 
     if not to_convert:
         print(f"All {len(all_jobs)} files are already converted in {output_root}. Nothing to do.", flush=True)

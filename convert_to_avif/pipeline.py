@@ -121,8 +121,10 @@ class Converter:
                 src_bytes=src_bytes, dimensions=dims, duration_sec=time.monotonic() - t0
             )
 
+        effective_q = self._encode.quality
+        q_reason = ""
         try:
-            self._encoder.encode(probe, output)
+            effective_q, q_reason = self._encoder.encode(probe, output)
         except EncodeError as exc:
             return ConvertResult.failed(
                 src_s, out_s, profile, str(exc),
@@ -146,6 +148,8 @@ class Converter:
                 duration_sec=duration,
                 qa=outcome,
                 rejected_message="",
+                effective_q=effective_q,
+                q_reason=q_reason,
             )
 
         rejected_message = self._quarantine_or_delete(output)
@@ -162,6 +166,8 @@ class Converter:
             duration_sec=duration,
             qa=outcome,
             rejected_message=rejected_message,
+            effective_q=effective_q,
+            q_reason=q_reason,
         )
 
     def _quarantine_or_delete(self, output: Path) -> str:
@@ -315,6 +321,8 @@ class BatchRunner:
                     dssim=data.get("dssim"),
                     ssim=data.get("ssim"),
                     qa=data.get("qa") or [],
+                    effective_q=data.get("effective_q"),
+                    q_reason=data.get("q_reason", ""),
                 )
                 results.append(result)
                 self._emit(result, index=idx, total=total)
@@ -332,11 +340,17 @@ class BatchRunner:
             dst_sz = _fmt_size(result.dst_bytes)
             pct = (1.0 - result.size_ratio) * 100 if result.size_ratio < 1.0 else (result.size_ratio - 1.0) * -100
             pct_sign = f"-{pct:.1f}%" if result.size_ratio < 1.0 else f"+{-pct:.1f}%"
+            q_str = ""
+            if result.effective_q is not None:
+                if result.q_reason and result.q_reason != "fixed":
+                    q_str = f" | q={result.effective_q} ({result.q_reason})"
+                else:
+                    q_str = f" | q={result.effective_q}"
             dim_str = f" | {result.dimensions}" if result.dimensions else ""
             time_str = f" | {result.duration_sec:.1f}s"
             dssim_str = f" | dssim={result.dssim:.5f}" if result.dssim else ""
             ssim_str = f" | ssim={result.ssim:.4f}" if result.ssim else ""
-            print(f"{prefix} {status:9} [{result.profile}] {src_name} | {src_sz} -> {dst_sz} ({pct_sign}){dim_str}{time_str}{dssim_str}{ssim_str}", flush=True)
+            print(f"{prefix} {status:9} [{result.profile}] {src_name} | {src_sz} -> {dst_sz} ({pct_sign}){q_str}{dim_str}{time_str}{dssim_str}{ssim_str}", flush=True)
         elif result.status is ConvertStatus.SKIPPED:
             time_str = f" ({result.duration_sec:.2f}s)" if result.duration_sec > 0.05 else ""
             print(f"{prefix} {status:9} [{result.profile}] {src_name} | {result.message}{time_str}", flush=True)
