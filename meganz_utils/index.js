@@ -26,6 +26,7 @@ const { resolveCredentials, connectMega, fetchRawNodes, closeMega } = require('.
 const { resolveFolderPath, parseExtensionFilter } = require('./lib/scanner');
 const { runThumbnailsTask } = require('./tasks/upload_thumbnails');
 const { runConvertTask } = require('./tasks/convert_to_avif');
+const { runOrganizeTask } = require('./tasks/organize_daywise');
 
 // ====================================================================
 // CLI Parser
@@ -44,6 +45,7 @@ Commands:
   thumbnails, thumb    Generate and upload sharp, full-frame thumbnails (320px) and previews (1600px)
                        using avifdec + ffmpeg. Reads from local directory to prevent re-downloads.
   convert, avif        Recursively convert remote JPEGs to AVIF, attaching thumbnails, and removing originals.
+  organize, org        Organize photos and videos into day-wise folders (Day 1 - Day 7) based on capture dates.
   help                 Display this help message
 
 Global Options:
@@ -221,7 +223,7 @@ async function main() {
     return;
   }
 
-  const validCommands = ['thumbnails', 'thumb', 'convert', 'avif'];
+  const validCommands = ['thumbnails', 'thumb', 'convert', 'avif', 'organize', 'org', 'daywise'];
   if (!validCommands.includes(cli.command)) {
     console.error(`Error: Unknown command "${cli.command}". Run "node index.js help" for usage.`);
     process.exit(1);
@@ -232,7 +234,7 @@ async function main() {
     if (cli.command === 'thumbnails' || cli.command === 'thumb') {
       cli.ext = ['avif', 'jpg', 'jpeg', 'png', 'webp'];
     } else if (cli.command === 'convert' || cli.command === 'avif') {
-      cli.ext = ['jpg', 'jpeg'];
+      cli.ext = ['jpg', 'jpeg', 'heic', 'heif'];
     }
   }
 
@@ -243,19 +245,25 @@ async function main() {
   const storage = await connectMega(credentials);
 
   try {
-    // 3. Resolve target folder node
+    // 3. Dispatch directly if organize task (targetPath resolution handled internally)
+    if (cli.command === 'organize' || cli.command === 'org' || cli.command === 'daywise') {
+      await runOrganizeTask(storage, cli);
+      return;
+    }
+
+    // 4. Resolve target folder node
     logger.info(`Resolving remote folder path: "${cli.targetPath}"...`);
     const targetFolder = resolveFolderPath(storage.root, cli.targetPath);
     logger.success(`Resolved folder: "${targetFolder.name}" (Node: ${targetFolder.nodeId})`);
 
-    // 4. Fetch raw nodes if running thumbnails task (for fa inspection)
+    // 5. Fetch raw nodes if running thumbnails task (for fa inspection)
     let rawNodes = [];
     if (cli.command === 'thumbnails' || cli.command === 'thumb') {
       logger.info('Fetching node attribute metadata (fa)...');
       rawNodes = await fetchRawNodes(storage);
     }
 
-    // 5. Dispatch to selected task
+    // 6. Dispatch to selected task
     if (cli.command === 'thumbnails' || cli.command === 'thumb') {
       await runThumbnailsTask(storage, targetFolder, cli, rawNodes);
     } else if (cli.command === 'convert' || cli.command === 'avif') {

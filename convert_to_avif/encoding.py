@@ -44,10 +44,10 @@ def compute_android_compatible_grid(
 def compute_adaptive_quality(probe: ProbeResult, base_quality: int) -> tuple[int, str]:
     """Compute optimal AVIF quality based on source format, estimated JPEG quality, and BPP.
 
-    Prevents file size inflation when transcoding pre-compressed lossy JPEGs
+    Prevents file size inflation when transcoding pre-compressed lossy JPEGs/HEICs
     while preserving high visual fidelity for clean/camera originals.
     """
-    if probe.kind != ImageKind.JPEG:
+    if probe.kind not in (ImageKind.JPEG, ImageKind.HEIC):
         return base_quality, f"lossless/non-jpeg source, using base quality {base_quality}"
 
     q_src = probe.estimated_quality
@@ -67,15 +67,15 @@ def compute_adaptive_quality(probe: ProbeResult, base_quality: int) -> tuple[int
         else:
             target_q = min(base_quality, 64)
     else:
-        reason_parts.append("src Q unknown")
+        reason_parts.append(f"{probe.kind.value} Q adaptive")
         if bpp >= 2.0:
             target_q = min(base_quality, 76)
         elif bpp >= 1.2:
-            target_q = min(base_quality, 73)
+            target_q = min(base_quality, 74)
         elif bpp >= 0.8:
-            target_q = min(base_quality, 70)
+            target_q = min(base_quality, 71)
         else:
-            target_q = min(base_quality, 66)
+            target_q = min(base_quality, 68)
 
     if bpp > 0:
         reason_parts.append(f"BPP={bpp:.2f}")
@@ -217,15 +217,18 @@ class AvifEncoder:
 
             # Restore original metadata if grid encoding or rasterized intermediate (HEIC, WEBP) was used
             if (grid is not None or enc_input != Path(probe.path)) and self._tools.exiftool and Path(probe.path).is_file():
-                self._runner.run(
-                    [
-                        self._tools.exiftool,
-                        "-tagsFromFile",
-                        str(probe.path),
-                        "-overwrite_original",
-                        str(output),
-                    ]
-                )
+                cmd = [
+                    self._tools.exiftool,
+                    "-tagsFromFile",
+                    str(probe.path),
+                    "-overwrite_original",
+                ]
+                if enc_input != Path(probe.path):
+                    # For rasterized intermediate images (like HEIC), the pixels are already auto-oriented upright.
+                    # Reset EXIF Orientation tag to 1 (Horizontal / normal) to prevent viewers from double-rotating.
+                    cmd.append("-Orientation#=1")
+                cmd.append(str(output))
+                self._runner.run(cmd)
 
             return quality, reason
 

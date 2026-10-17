@@ -79,8 +79,12 @@ class StructuralGate(QualityGate):
                 return QaOutcome(False, ["decoded PNG invalid"])
             if probe.width and probe.height and (width, height) != (probe.width, probe.height):
                 expected_even = (probe.width - (probe.width % 2), probe.height - (probe.height % 2))
+                expected_swapped = (probe.height, probe.width)
+                expected_swapped_even = (probe.height - (probe.height % 2), probe.width - (probe.width % 2))
                 if (width, height) == expected_even:
                     return QaOutcome(True, [f"decoded={width}x{height} (even-adjusted for MIAF/YUV420)"])
+                if (width, height) in (expected_swapped, expected_swapped_even):
+                    return QaOutcome(True, [f"decoded={width}x{height} (oriented)"])
                 return QaOutcome(
                     False,
                     [f"dimension mismatch {width}x{height} vs {probe.width}x{probe.height}"],

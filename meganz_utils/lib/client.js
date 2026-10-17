@@ -9,9 +9,52 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const http = require('http');
+const https = require('https');
+const { URL } = require('url');
 const { execSync } = require('child_process');
 const { Storage } = require('megajs');
 const { logger } = require('./logger');
+
+/**
+ * Custom fetch implementation utilizing Node's http/https modules with insecureHTTPParser: true.
+ * MEGA storage servers (userstorage.mega.co.nz) occasionally omit \r (CR) before \n in custom headers,
+ * which triggers strict HTTPParserError (HPE_CR_EXPECTED) in Node 18+ undici and hangs downloads indefinitely.
+ */
+function customFetch(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const mod = parsed.protocol === 'https:' ? https : http;
+    const reqOptions = {
+      method: options.method || 'GET',
+      headers: options.headers || {},
+      insecureHTTPParser: true,
+    };
+    const req = mod.request(parsed, reqOptions, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        const bodyBuf = Buffer.concat(chunks);
+        resolve({
+          ok: res.statusCode >= 200 && res.statusCode < 300,
+          status: res.statusCode,
+          statusText: res.statusMessage,
+          headers: {
+            get: (name) => res.headers[name.toLowerCase()],
+          },
+          arrayBuffer: async () => bodyBuf.buffer.slice(bodyBuf.byteOffset, bodyBuf.byteOffset + bodyBuf.byteLength),
+          text: async () => bodyBuf.toString('utf8'),
+          json: async () => JSON.parse(bodyBuf.toString('utf8')),
+        });
+      });
+    });
+    req.on('error', reject);
+    if (options.body) {
+      req.write(options.body);
+    }
+    req.end();
+  });
+}
 
 /**
  * Extracts and reveals credentials from rclone.conf for a given remote.
@@ -90,7 +133,12 @@ async function connectMega(credentials) {
     password: credentials.password,
     autologin: true,
     autoload: true,
+    fetch: customFetch,
   }).ready;
+
+  if (storage.api) {
+    storage.api.fetch = customFetch;
+  }
 
   logger.success(`Connected to MEGA successfully! Account: ${storage.name || credentials.email}`);
   return storage;

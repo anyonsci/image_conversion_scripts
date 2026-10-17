@@ -162,43 +162,56 @@ async function validateConversion({
       avifHeight = parseInt(resMatch[2], 10);
     }
 
-    // Get original JPG resolution using ffprobe
+    // Get original image resolution using exiftool (reliable for HEIC and JPEG, avoids picking up embedded 512x512 thumbnail streams)
     let origWidth = null;
     let origHeight = null;
     try {
-      const probeRes = await execPromise(
-        `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${sourceJpgPath}"`
+      const exifRes = await execPromise(
+        `exiftool -s3 -ImageWidth -ImageHeight "${sourceJpgPath}"`
       );
-      const parts = probeRes.stdout.trim().split('x');
-      if (parts.length === 2) {
-        origWidth = parseInt(parts[0], 10);
-        origHeight = parseInt(parts[1], 10);
+      const lines = exifRes.stdout.trim().split(/\s+/);
+      if (lines.length >= 2 && parseInt(lines[0], 10) > 0 && parseInt(lines[1], 10) > 0) {
+        origWidth = parseInt(lines[0], 10);
+        origHeight = parseInt(lines[1], 10);
       }
-    } catch (probeErr) {
+    } catch (_) {}
+
+    // Fallback to ffprobe only if exiftool was unavailable or failed
+    if (!origWidth || !origHeight) {
       try {
-        const exifRes = await execPromise(
-          `exiftool -s3 -ImageWidth -ImageHeight "${sourceJpgPath}"`
+        const probeRes = await execPromise(
+          `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${sourceJpgPath}"`
         );
-        const lines = exifRes.stdout.trim().split(/\s+/);
-        if (lines.length >= 2) {
-          origWidth = parseInt(lines[0], 10);
-          origHeight = parseInt(lines[1], 10);
+        const lines = probeRes.stdout.trim().split(/\s+/);
+        if (lines.length > 0) {
+          const parts = lines[0].split('x');
+          if (parts.length >= 2 && parseInt(parts[0], 10) > 0 && parseInt(parts[1], 10) > 0) {
+            origWidth = parseInt(parts[0], 10);
+            origHeight = parseInt(parts[1], 10);
+          }
         }
-      } catch (exifErr) {
-        logger.warn(`Could not probe source image dimensions: ${exifErr.message}`);
+      } catch (probeErr) {
+        logger.warn(`Could not probe source image dimensions: ${probeErr.message}`);
       }
     }
 
-    // Dimension match verification (allow 1px adjustment for MIAF grid even-dimension requirement)
+    // Dimension match verification (allow 1px adjustment for MIAF grid even-dimension requirement and orientation swaps)
     if (avifWidth && avifHeight && origWidth && origHeight) {
       const evenOrigWidth = origWidth - (origWidth % 2);
       const evenOrigHeight = origHeight - (origHeight % 2);
-      if (
-        (avifWidth !== origWidth && avifWidth !== evenOrigWidth) ||
-        (avifHeight !== origHeight && avifHeight !== evenOrigHeight)
-      ) {
+      const evenSwappedWidth = origHeight - (origHeight % 2);
+      const evenSwappedHeight = origWidth - (origWidth % 2);
+
+      const matchesDirect =
+        (avifWidth === origWidth || avifWidth === evenOrigWidth) &&
+        (avifHeight === origHeight || avifHeight === evenOrigHeight);
+      const matchesSwapped =
+        (avifWidth === origHeight || avifWidth === evenSwappedWidth) &&
+        (avifHeight === origWidth || avifHeight === evenSwappedHeight);
+
+      if (!matchesDirect && !matchesSwapped) {
         throw new Error(
-          `Dimension mismatch: Source JPEG is ${origWidth}x${origHeight} but AVIF decoded to ${avifWidth}x${avifHeight}`
+          `Dimension mismatch: Source image is ${origWidth}x${origHeight} but AVIF decoded to ${avifWidth}x${avifHeight}`
         );
       }
     }
@@ -233,6 +246,37 @@ async function validateConversion({
       } catch (_) {}
     }
   }
+}
+
+/**
+ * Downloads a file buffer from MEGA with a hard timeout to prevent indefinite hangs
+ * on network or socket stalls.
+ * @param {import('megajs').MutableFile} file
+ * @param {number} [timeoutMs=60000]
+ * @returns {Promise<Buffer>}
+ */
+function downloadBufferWithTimeout(file, timeoutMs = 60000, options = {}) {
+  return new Promise((resolve, reject) => {
+    let timer = setTimeout(() => {
+      timer = null;
+      reject(new Error(`Download timed out after ${timeoutMs / 1000}s`));
+    }, timeoutMs);
+
+    file
+      .downloadBuffer(options)
+      .then((buf) => {
+        if (timer) {
+          clearTimeout(timer);
+          resolve(buf);
+        }
+      })
+      .catch((err) => {
+        if (timer) {
+          clearTimeout(timer);
+          reject(err);
+        }
+      });
+  });
 }
 
 /**
@@ -282,15 +326,27 @@ async function processImage(item, config) {
   try {
     await fs.promises.mkdir(path.dirname(tempJpgPath), { recursive: true });
 
-    // Step 1: Download image buffer with retry
+    // Step 1: Download image buffer with retry and hard timeout
     logger.info(`Downloading in-memory Buffer for "${fileName}"...`);
     let jpgBuffer = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        jpgBuffer = await file.downloadBuffer();
+        jpgBuffer = await downloadBufferWithTimeout(file, 60000);
         if (jpgBuffer && jpgBuffer.length > 0) break;
         throw new Error('Downloaded buffer is empty');
       } catch (err) {
+        if (err.message && err.message.toLowerCase().includes('mac verification failed')) {
+          logger.warn(`MAC check failed for "${fileName}" (file metadata MAC mismatch in MEGA DB). Retrying with ranged download to bypass corrupt MAC checksum...`);
+          try {
+            jpgBuffer = await downloadBufferWithTimeout(file, 60000, { start: 0, end: file.size - 1 });
+            if (jpgBuffer && jpgBuffer.length > 0) {
+              logger.success(`Ranged download succeeded for "${fileName}" (${formatBytes(jpgBuffer.length)})!`);
+              break;
+            }
+          } catch (rangeErr) {
+            logger.warn(`Ranged download fallback also failed: ${rangeErr.message}`);
+          }
+        }
         if (attempt === 3) throw err;
         const delay = attempt * 2000;
         logger.warn(`Download failed for "${fileName}" (${err.message}), retrying in ${delay}ms (attempt ${attempt}/3)...`);
@@ -328,7 +384,8 @@ async function processImage(item, config) {
     // Step 3: Run convert_to_avif command
     await fs.promises.mkdir(path.dirname(config.logFilePath), { recursive: true });
     const adaptiveFlag = config.adaptiveQuality !== false ? '--adaptive-quality' : '--no-adaptive-quality';
-    const conversionCmd = `set -o pipefail; "${config.convertScriptPath}" "${tempJpgPath}" -o "${tempAvifPath}" --codec ${config.codec} -s ${config.speed} -q ${config.quality} ${adaptiveFlag} -j ${config.jobs} 2>&1 | tee -a "${config.logFilePath}"`;
+    const gainMapFlag = config.skipUltraHdr === false ? '--no-skip-gain-map' : '--skip-gain-map';
+    const conversionCmd = `set -o pipefail; "${config.convertScriptPath}" "${tempJpgPath}" -o "${tempAvifPath}" --codec ${config.codec} -s ${config.speed} -q ${config.quality} ${adaptiveFlag} ${gainMapFlag} -j ${config.jobs} 2>&1 | tee -a "${config.logFilePath}"`;
     const qLabel = config.adaptiveQuality !== false ? `auto-quality (base: ${config.quality})` : `fixed q=${config.quality}`;
     logger.info(`Running convert_to_avif for "${fileName}" [${qLabel}]...`);
     await execPromise(conversionCmd, { shell: '/bin/bash' });
@@ -433,7 +490,7 @@ async function processImage(item, config) {
  * Runs a single synchronization pass for JPEG -> AVIF.
  */
 async function runSinglePass(storage, targetFolder, config) {
-  const extensions = config.ext || ['jpg', 'jpeg'];
+  const extensions = config.ext || ['jpg', 'jpeg', 'heic', 'heif'];
   logger.info(`Scanning target folder "${targetFolder.name}" for extensions: [${extensions.join(', ')}]...`);
 
   const files = scanFiles(targetFolder, {

@@ -94,6 +94,9 @@ class ImageProber:
         meta = self._meta.read(path)
         width = int(meta.get("ImageWidth") or meta.get("ExifImageWidth") or 0)
         height = int(meta.get("ImageHeight") or meta.get("ExifImageHeight") or 0)
+        orientation = int(meta.get("Orientation") or 1)
+        if kind is ImageKind.HEIC and orientation in (5, 6, 7, 8):
+            width, height = height, width
         if (width == 0 or height == 0) and path.is_file():
             try:
                 from PIL import Image

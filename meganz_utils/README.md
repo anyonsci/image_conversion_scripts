@@ -14,7 +14,8 @@ meganz_utils/
 │   └── logger.js               # Timestamped logging & formatting
 ├── tasks/                      # Modular task runners
 │   ├── upload_thumbnails.js    # Task 1: Full-frame thumbnail & preview generator
-│   └── convert_to_avif.js      # Task 2: Automated JPEG -> AVIF converter & sync
+│   ├── convert_to_avif.js      # Task 2: Automated JPEG -> AVIF converter & sync
+│   └── organize_daywise.js     # Task 3: Fast day-wise folder organizer
 ├── index.js                    # Unified CLI entrypoint & task dispatcher
 ├── package.json                # Project manifest & npm scripts
 ├── .env.example                # Environment variables template
@@ -112,6 +113,40 @@ node index.js convert --path="/Photos/Vacation" --cron --schedule="*/30 * * * *"
 
 > [!IMPORTANT]
 > **100% AVIF Standardization (No Fallback)**: All target JPEG images are converted to AVIF to ensure complete format consistency across the cloud library. With `--adaptive-quality`, heavily compressed or high-noise photos have their target quality intelligently lowered so they achieve compression savings without artifact amplification, while clean camera shots retain maximum visual fidelity. Original JPEGs are deleted only after verified upload.
+
+---
+
+## Command 3: `organize` (Day-wise Photo & Video Organizer)
+
+Sorts trip photos and videos into day-wise folders (`Day 1` = Oct 10 through `Day 7` = Oct 16) based on true capture/recording timestamps.
+
+### Why File Modification Times Cannot Be Used
+When converting images to AVIF or moving files on cloud drives, the filesystem modified/created dates reflect the conversion/upload day (e.g. today). `organize` bypasses filesystem timestamps and identifies the real capture date using a smart multi-tier strategy:
+
+1. **Filename Regex (0-bandwidth, instantaneous)**: Matches `PXL_YYYYMMDD_...` (Pixel photos and videos) or ISO date patterns.
+2. **Remote EXIF Header Probing (~128 KB range read)**: For Apple iPhone photos (`IMG_xxxx.HEIC`, `IMG_xxxx.avif`, `IMG_xxxx.JPG`), reads only the first 128 KB chunk to extract `DateTimeOriginal` / `CreateDate` via `exiftool`. The full image is never downloaded.
+3. **QuickTime Atom Probing (~1 KB read)**: For videos (`.MOV`, `.MP4`), inspects the `moov` / `mvhd` atom creation date.
+4. **Sequence Interpolation**: For untagged photos/screenshots without EXIF (e.g. `IMG_2856`), interpolates the capture date from adjacent numbered frames (`IMG_2855` and `IMG_2857`).
+5. **Instant Server-Side Moves**: Files are moved using MEGA's native `file.moveTo(targetFolder)` API, which updates directory pointers in milliseconds with zero download/upload bandwidth.
+
+### Usage
+```bash
+# Preview day-wise distribution without moving files:
+node index.js organize --path="kashmir oct 26" --dry-run
+
+# Execute live organization:
+node index.js organize --path="kashmir oct 26"
+
+# Organize another folder:
+node index.js organize --path="kashmir"
+```
+
+### Options for `organize`
+| Flag | Description | Default |
+| :--- | :--- | :--- |
+| `-p, --path <path>` | Target folder on MEGA to organize | `"/"` |
+| `--dry-run` | Simulate date resolution & preview file counts per day | `false` |
+| `--rclone-remote <remote>` | Rclone remote name to load credentials from | `"mega1"` |
 
 ---
 

@@ -80,6 +80,16 @@ Generates sharp 320px thumbnails and 1600px previews for all AVIF files:
 node meganz_utils/index.js thumbnails --path="/"
 ```
 
+### 5. Organize Photos & Videos Day-Wise (Day 1 - Day 7)
+Sorts trip photos and videos into day-wise folders (`Day 1` = Oct 10 to `Day 7` = Oct 16) using true capture dates (EXIF, QuickTime atoms, filename regex, sequence interpolation) without downloading full files. Moves are executed server-side via MEGA's API:
+```bash
+# Preview distribution (dry-run):
+node meganz_utils/index.js organize --path="kashmir oct 26" --dry-run
+
+# Execute live organization:
+node meganz_utils/index.js organize --path="kashmir oct 26"
+```
+
 ---
 
 ## 📂 Repository Structure
@@ -91,4 +101,5 @@ node meganz_utils/index.js thumbnails --path="/"
   - [`index.js`](meganz_utils/index.js): CLI entrypoint.
   - [`tasks/convert_to_avif.js`](meganz_utils/tasks/convert_to_avif.js): Remote download $\rightarrow$ convert $\rightarrow$ validate $\rightarrow$ upload $\rightarrow$ delete workflow.
   - [`tasks/upload_thumbnails.js`](meganz_utils/tasks/upload_thumbnails.js): Sharp thumbnail/preview generator.
+  - [`tasks/organize_daywise.js`](meganz_utils/tasks/organize_daywise.js): Fast day-wise folder organizer with server-side instant moves.
   - [`test_logic.js`](meganz_utils/test_logic.js): Unit test suite.
