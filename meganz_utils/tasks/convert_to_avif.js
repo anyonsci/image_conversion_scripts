@@ -277,6 +277,8 @@ function downloadBufferWithTimeout(file, timeoutMs = 60000, options = {}) {
         }
       });
   });
+}
+
 /**
  * Uploads a file to a MEGA folder with automatic retries, stream error protection,
  * and automatic stripping of thumbnail/preview attributes if MEGA rejects attributes with 400.
