@@ -277,6 +277,63 @@ function downloadBufferWithTimeout(file, timeoutMs = 60000, options = {}) {
         }
       });
   });
+/**
+ * Uploads a file to a MEGA folder with automatic retries, stream error protection,
+ * and automatic stripping of thumbnail/preview attributes if MEGA rejects attributes with 400.
+ * @param {import('megajs').MutableFile} parentFolder
+ * @param {string} fileName
+ * @param {Buffer} fileBuffer
+ * @param {Buffer|null} thumbBuffer
+ * @param {Buffer|null} previewBuffer
+ * @param {number} [maxAttempts=3]
+ * @returns {Promise<import('megajs').MutableFile>}
+ */
+async function uploadFileWithRetry(parentFolder, fileName, fileBuffer, thumbBuffer, previewBuffer, maxAttempts = 3) {
+  let currentThumb = thumbBuffer;
+  let currentPreview = previewBuffer;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const uploadOptions = {
+        name: fileName,
+        size: fileBuffer.length,
+        allowUploadBuffering: true,
+      };
+      if (currentThumb) uploadOptions.thumbnailImage = currentThumb;
+      if (currentPreview) uploadOptions.previewImage = currentPreview;
+
+      const uploadStream = parentFolder.upload(uploadOptions, fileBuffer);
+      // Attach an error listener to prevent unhandled 'error' events on PassThrough streams from crashing the process
+      let streamErr = null;
+      uploadStream.on('error', (err) => {
+        streamErr = err;
+      });
+
+      const uploadedFile = await uploadStream.complete;
+      return uploadedFile;
+    } catch (err) {
+      const errMsg = (err && err.message) || String(err);
+      logger.warn(`Upload attempt ${attempt}/${maxAttempts} failed for "${fileName}": ${errMsg}`);
+
+      if (attempt === maxAttempts) {
+        throw err;
+      }
+
+      // If status 400 or attribute error occurred, strip preview and thumbnail sequentially
+      if (errMsg.includes('400') || errMsg.includes('status code')) {
+        if (currentPreview) {
+          logger.warn(`Stripping preview image from upload retry to avoid MEGA attribute size rejection.`);
+          currentPreview = null;
+        } else if (currentThumb) {
+          logger.warn(`Stripping thumbnail image from upload retry.`);
+          currentThumb = null;
+        }
+      }
+
+      const backoff = attempt * 2000;
+      await new Promise((r) => setTimeout(r, backoff));
+    }
+  }
 }
 
 /**
@@ -416,18 +473,37 @@ async function processImage(item, config) {
         await execPromise(
           `ffmpeg -threads 1 -y -v error -i "${tempDecodedPath}" \
             -vf "scale=320:320:force_original_aspect_ratio=decrease" -q:v 2 -update 1 "${tempThumbPath}" \
-            -vf "scale='min(1600,iw)':'min(1600,ih)':force_original_aspect_ratio=decrease" -q:v 2 -update 1 "${tempPrevPath}"`
+            -vf "scale='min(1600,iw)':'min(1600,ih)':force_original_aspect_ratio=decrease" -q:v 4 -update 1 "${tempPrevPath}"`
         );
         fs.promises.unlink(tempDecodedPath).catch(() => {});
       } else {
         await execPromise(
           `ffmpeg -threads 1 -y -v error -i "${tempJpgPath}" \
             -vf "scale=320:320:force_original_aspect_ratio=decrease" -q:v 2 -update 1 "${tempThumbPath}" \
-            -vf "scale='min(1600,iw)':'min(1600,ih)':force_original_aspect_ratio=decrease" -q:v 2 -update 1 "${tempPrevPath}"`
+            -vf "scale='min(1600,iw)':'min(1600,ih)':force_original_aspect_ratio=decrease" -q:v 4 -update 1 "${tempPrevPath}"`
         );
       }
       thumbBuffer = await fs.promises.readFile(tempThumbPath);
       previewBuffer = await fs.promises.readFile(tempPrevPath);
+
+      // Guardrail: MEGA file attributes have a strict 1MB (1,048,576 bytes) limit.
+      // High-frequency/complex images at 1600px can exceed 1MB, triggering HTTP 400 Bad Request.
+      // If preview exceeds 800 KB, re-compress with q:v 6 to ensure it stays well below the limit.
+      if (previewBuffer && previewBuffer.length > 800000) {
+        const tempPrevCompressed = tempPrevPath + '.cmp.jpg';
+        try {
+          await execPromise(`ffmpeg -threads 1 -y -v error -i "${tempPrevPath}" -q:v 6 "${tempPrevCompressed}"`);
+          const compressedBuf = await fs.promises.readFile(tempPrevCompressed);
+          if (compressedBuf.length > 0 && compressedBuf.length < previewBuffer.length) {
+            previewBuffer = compressedBuf;
+          }
+          await fs.promises.unlink(tempPrevCompressed).catch(() => {});
+        } catch (_) {}
+      }
+      if (previewBuffer && previewBuffer.length > 950000) {
+        logger.warn(`Preview image is too large (${formatBytes(previewBuffer.length)}) for MEGA attribute limit (<1MB). Omitting preview.`);
+        previewBuffer = null;
+      }
     } catch (thumbErr) {
       logger.warn(`Could not generate thumbnail/preview during upload: ${thumbErr.message}`);
     }
@@ -450,17 +526,9 @@ async function processImage(item, config) {
       logger.warn(`Validation skipped for "${fileName}" (--no-verify).`);
     }
 
-    // Step 6: Upload AVIF with thumbnail & preview attached
+    // Step 6: Upload AVIF with thumbnail & preview attached (with automatic retry and attribute fallback)
     logger.info(`Uploading "${avifFileName}" to parent folder "${parentFolder.name}"...`);
-    const uploadOptions = {
-      name: avifFileName,
-      size: avifBuffer.length,
-      allowUploadBuffering: true,
-    };
-    if (thumbBuffer) uploadOptions.thumbnailImage = thumbBuffer;
-    if (previewBuffer) uploadOptions.previewImage = previewBuffer;
-
-    await parentFolder.upload(uploadOptions, avifBuffer).complete;
+    await uploadFileWithRetry(parentFolder, avifFileName, avifBuffer, thumbBuffer, previewBuffer);
     logger.success(`Upload complete for "${avifFileName}".`);
 
     // Step 7: Delete original JPEG file from MEGA (ONLY REACHED IF VALIDATION & UPLOAD SUCCEEDED!)

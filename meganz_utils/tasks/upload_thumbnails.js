@@ -49,12 +49,25 @@ async function generateThumbnailAndPreview(inputPath, thumbOutPath, prevOutPath,
       '-update', '1',
       `"${thumbOutPath}"`,
       '-vf', '"scale=\'min(1600,iw)\':\'min(1600,ih)\':force_original_aspect_ratio=decrease"',
-      '-q:v', '2',
+      '-q:v', '4',
       '-update', '1',
       `"${prevOutPath}"`,
     ].join(' ');
 
     await execPromise(cmd);
+
+    // Guardrail: Ensure preview fits within MEGA's 1MB attribute ceiling (<800KB safe)
+    if (fs.existsSync(prevOutPath) && fs.statSync(prevOutPath).size > 800000) {
+      const cmpPath = prevOutPath + '.cmp.jpg';
+      try {
+        await execPromise(`ffmpeg -threads 1 -y -v error -i "${prevOutPath}" -q:v 6 "${cmpPath}"`);
+        if (fs.existsSync(cmpPath) && fs.statSync(cmpPath).size < fs.statSync(prevOutPath).size) {
+          fs.renameSync(cmpPath, prevOutPath);
+        } else if (fs.existsSync(cmpPath)) {
+          fs.unlinkSync(cmpPath);
+        }
+      } catch (_) {}
+    }
   } finally {
     if (intermediateJpg && fs.existsSync(intermediateJpg)) {
       try {
@@ -105,10 +118,18 @@ async function generateThumbnailOnly(inputPath, thumbOutPath, tempDir) {
  * Helper to upload an attribute with exponential backoff retries.
  */
 async function uploadAttributeWithRetry(file, type, buffer, maxRetries = 3) {
+  if (buffer.length > 950000) {
+    logger.warn(`Attribute (type ${type}) exceeds MEGA limit (${buffer.length} > 950KB). Skipping to prevent 400 error.`);
+    return;
+  }
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await file.uploadAttribute(type, buffer);
     } catch (err) {
+      if (err.message && err.message.includes('400')) {
+        logger.warn(`MEGA rejected attribute (type ${type}) with 400. Skipping attribute.`);
+        return;
+      }
       if (attempt === maxRetries) throw err;
       logger.warn(`Upload "${type}" attribute attempt ${attempt} failed: ${err.message}. Retrying in 2s...`);
       await new Promise((resolve) => setTimeout(resolve, 2000));

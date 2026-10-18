@@ -71,6 +71,11 @@ image_conversion_scripts/
 ### E. Active Conversion Awareness
 - **Rule**: Never run `organize` on a folder that is actively undergoing conversion by `convert_to_avif`. If files are moved into subdirectories while conversion is running, newly uploaded AVIFs will land in the root folder instead of the day folder.
 
+### F. MEGA Attribute 1MB Limit (`Error: MEGA returned a 400 status code`)
+- **Symptom**: Upload fails with `Error: MEGA returned a 400 status code` during file upload or attribute upload.
+- **Root Cause**: MEGA storage servers strictly enforce a 1 MB (1,048,576 bytes) ceiling on file attributes (Attribute 0: thumbnail, Attribute 1: preview). Generating 1600px previews at high quality (`-q:v 2`) on complex, high-entropy scenes (trees, mountains, water) can generate previews exceeding 1 MB, triggering an HTTP 400 Bad Request.
+- **Solution**: Previews must be encoded with `-q:v 4` and dynamically capped below 800 KB. `uploadFileWithRetry` in [`tasks/convert_to_avif.js`](meganz_utils/tasks/convert_to_avif.js) catches stream errors, intercepts 400 responses, and automatically retries by stripping oversized preview attributes so the underlying AVIF file is never blocked.
+
 ---
 
 ## 4. Key Workflows & CLI Commands

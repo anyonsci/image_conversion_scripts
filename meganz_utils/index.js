@@ -22,6 +22,15 @@ const dotenv = require('dotenv');
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 const { logger } = require('./lib/logger');
+
+// Global safety nets to prevent third-party stream errors from killing long-running jobs
+process.on('uncaughtException', (err) => {
+  logger.error(`[UNCAUGHT EXCEPTION] ${err.message}`, err);
+});
+process.on('unhandledRejection', (reason) => {
+  logger.error(`[UNHANDLED REJECTION] ${reason}`);
+});
+
 const { resolveCredentials, connectMega, fetchRawNodes, closeMega } = require('./lib/client');
 const { resolveFolderPath, parseExtensionFilter } = require('./lib/scanner');
 const { runThumbnailsTask } = require('./tasks/upload_thumbnails');
