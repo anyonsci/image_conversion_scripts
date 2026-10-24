@@ -15,42 +15,58 @@ class EncodeError(RuntimeError):
     pass
 
 
-def compute_adaptive_video_crf(info: VideoInfo, base_crf: int) -> tuple[int, str]:
-    """Compute optimal AV1 CRF dynamically based on resolution, bitrate, and dynamic range.
+def compute_adaptive_video_crf(info: VideoInfo, base_crf: int = 30) -> tuple[int, str]:
+    """Compute optimal AV1 CRF dynamically (30-34) based on resolution, bitrate, and dynamic range.
 
-    Prevents quality degradation on already-compressed or low-resolution videos,
-    and maximizes compression efficiency on high-bitrate 4K camera originals.
+    Guarantees that high-bitrate smartphone camera footage compresses effectively
+    without size bloat, while preserving visual transparency and smooth gradients.
+    Dynamic range is strictly constrained to [30, 34].
     """
     reasons: list[str] = []
-    crf = base_crf
+
+    # Start at base CRF (clamped within [30, 34], default 30)
+    crf = max(30, min(base_crf, 34))
 
     # 1. Resolution-based scaling
     pixels = info.width * info.height
     if pixels >= 3840 * 2160:  # 4K UHD
-        crf = min(crf + 2, 32)
-        reasons.append("4K high-density (+2 CRF)")
+        crf += 3
+        reasons.append("4K high-density (+3 CRF)")
     elif pixels >= 2560 * 1440:  # 1440p
-        crf = min(crf + 1, 31)
-        reasons.append("1440p density (+1 CRF)")
-    elif 0 < pixels <= 1280 * 720:  # 720p or lower
-        crf = max(crf - 2, 22)
-        reasons.append("<=720p low-res detail preservation (-2 CRF)")
+        crf += 2
+        reasons.append("1440p density (+2 CRF)")
+    elif pixels >= 1920 * 1080:  # 1080p Full HD
+        crf += 1
+        reasons.append("1080p Full HD (+1 CRF)")
+    else:
+        reasons.append("<=720p detail preservation (base CRF)")
 
-    # 2. Bitrate / BPPF (bits per pixel-frame) estimation
+    # 2. Bitrate / BPPF (bits per pixel-frame) scaling
     if info.duration > 0 and pixels > 0 and info.fps > 0 and info.size_bytes > 0:
         bppf = (info.size_bytes * 8.0) / (pixels * info.fps * info.duration)
         reasons.append(f"BPPF={bppf:.3f}")
-        if bppf < 0.05:  # Pre-compressed low-bitrate video
-            crf = max(crf - 2, 22)
-            reasons.append("low-bitrate source safeguard (-2 CRF)")
+        if pixels > 1280 * 720:
+            if bppf >= 0.22:
+                # High-bitrate phone camera original with sensor noise; scale up to avoid file bloat
+                crf += 2
+                reasons.append("high-bitrate camera original (+2 CRF)")
+            elif bppf >= 0.12:
+                crf += 1
+                reasons.append("moderate-bitrate camera video (+1 CRF)")
+            elif bppf < 0.05:
+                # Already heavily compressed; keep at floor 30 to prevent degradation
+                crf = 30
+                reasons.append("low-bitrate source safeguard (CRF 30)")
 
-    # 3. HDR 10-bit color gradient protection
+    # 3. HDR 10-bit banding safeguard (cap at 32 to guarantee ultra-smooth color gradients)
     if info.is_hdr or info.bit_depth > 8:
-        if crf > 26:
-            crf = 26
-            reasons.append("10-bit HDR banding prevention (capped at 26)")
+        if crf > 32:
+            crf = 32
+            reasons.append("10-bit HDR gradient protection (capped at 32)")
 
-    return crf, ", ".join(reasons) or "default"
+    # Strictly enforce 30-34 dynamic range
+    final_crf = max(30, min(crf, 34))
+    return final_crf, ", ".join(reasons) or "default"
 
 
 class VideoEncoder:

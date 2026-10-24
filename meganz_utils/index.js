@@ -90,12 +90,12 @@ Convert Options:
   --no-verify               Skip similarity validation before deleting source JPEG
 
 Video Convert Options:
-  --crf <num>               AV1 CRF constant rate factor (default: 28, recommended: 26-28)
-  --preset <num>            SVT-AV1 preset 0-13 (default: 6)
+  --crf <num>               AV1 CRF constant rate factor (default: 30, dynamic: 30-34)
+  --preset <num>            SVT-AV1 preset 0-13 (default: 8)
   -t, --threads <num>       Encoding threads (default: 2)
   --audio-codec <codec>     Audio codec: 'auto', 'copy', 'aac', or 'opus' (default: 'auto')
   --audio-bitrate <rate>    Audio bitrate for re-encoded audio (default: '192k')
-  --adaptive-quality        Dynamically tune CRF based on resolution, bitrate, and bit-depth (default: true)
+  --adaptive-quality        Dynamically tune CRF (30-34) based on resolution, bitrate, and bit-depth (default: true)
   --no-adaptive-quality     Disable adaptive quality and use fixed -crf for all videos
 
 Examples:
@@ -144,8 +144,8 @@ function parseCLI() {
     validate: true,
     minSSIM: process.env.MIN_SSIM ? parseFloat(process.env.MIN_SSIM) : 0.85,
     skipUltraHdr: true,
-    crf: parseInt(process.env.VIDEO_CRF, 10) || 28,
-    preset: parseInt(process.env.VIDEO_PRESET, 10) || 6,
+    crf: parseInt(process.env.VIDEO_CRF, 10) || 30,
+    preset: parseInt(process.env.VIDEO_PRESET, 10) || 8,
     threads: parseInt(process.env.VIDEO_THREADS, 10) || 2,
     audioCodec: process.env.AUDIO_CODEC || 'auto',
     audioBitrate: process.env.AUDIO_BITRATE || '192k',

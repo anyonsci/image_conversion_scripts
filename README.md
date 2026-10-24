@@ -87,18 +87,18 @@ Streams remote MP4/MOV videos to disk, converts video streams to AV1 via SVT-AV1
 # Preview candidates:
 node meganz_utils/index.js convert-video --path="trips" --dry-run
 
-# Run high-quality conversion (CRF 28, Preset 6, 2 threads):
-node meganz_utils/index.js convert-video --path="trips" -crf 28 --preset 6
+# Run high-quality conversion (CRF 30 [dynamically scaled 30-34], Preset 8, 2 threads):
+node meganz_utils/index.js convert-video --path="trips" -crf 30 --preset 8
 ```
 
 ### 6. Local Standalone Video Conversion (CLI)
 Convert local video files or directories directly without MEGA:
 ```bash
 # Convert a single video:
-./convert_video_to_av1/convert_video_to_av1.sh input.mov -o output.mp4 -crf 28 -p 6
+./convert_video_to_av1/convert_video_to_av1.sh input.mov -o output.mp4 -crf 30 -p 8
 
 # Batch convert a folder recursively:
-./convert_video_to_av1/convert_video_to_av1.sh /path/to/videos -crf 28 -p 6
+./convert_video_to_av1/convert_video_to_av1.sh /path/to/videos -crf 30 -p 8
 ```
 
 ### 7. Organize Photos & Videos Day-Wise (Day 1 - Day 7)

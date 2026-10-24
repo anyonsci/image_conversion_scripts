@@ -25,11 +25,11 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "-crf", "--crf", type=int, default=DEFAULT_CRF,
-        help=f"Constant Rate Factor (default: {DEFAULT_CRF}, recommended 26-28 for high quality)",
+        help=f"Constant Rate Factor (default: {DEFAULT_CRF}, dynamic range 30-34 for high quality and guaranteed savings)",
     )
     parser.add_argument(
         "--adaptive-quality", action=argparse.BooleanOptionalAction, default=True,
-        help="Dynamically scale AV1 CRF based on resolution, source bitrate, and HDR bit-depth (default: true)",
+        help="Dynamically scale AV1 CRF (30-34) based on resolution, source bitrate, and HDR bit-depth (default: true)",
     )
     parser.add_argument(
         "-p", "--preset", type=int, default=DEFAULT_PRESET,

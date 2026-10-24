@@ -113,23 +113,41 @@ class TestVideoConverter(unittest.TestCase):
         from convert_video_to_av1.encoding import compute_adaptive_video_crf
         from convert_video_to_av1.models import VideoInfo
 
-        # 4K high density test -> crf should be scaled up (+2)
+        # 1. 4K high density test -> crf should scale up to top of range (34)
         info_4k = VideoInfo(
             path="dummy.mp4", duration=10.0, width=3840, height=2160, fps=30.0,
             video_codec="h264", audio_codec="aac", pix_fmt="yuv420p", bit_depth=8,
             is_hdr=False, size_bytes=100_000_000
         )
-        crf_4k, reason_4k = compute_adaptive_video_crf(info_4k, 28)
-        self.assertEqual(crf_4k, 30)
+        crf_4k, reason_4k = compute_adaptive_video_crf(info_4k, 30)
+        self.assertEqual(crf_4k, 34)
 
-        # 720p or lower test -> crf should be scaled down (-2)
+        # 2. 1080p high-bitrate camera original -> crf should scale to 33
+        info_1080p_high = VideoInfo(
+            path="camera.mp4", duration=7.9, width=1920, height=1080, fps=30.0,
+            video_codec="h264", audio_codec="aac", pix_fmt="yuv420p", bit_depth=8,
+            is_hdr=False, size_bytes=18_300_000  # ~18.5 Mbps, BPPF ~0.298
+        )
+        crf_1080p, reason_1080p = compute_adaptive_video_crf(info_1080p_high, 30)
+        self.assertEqual(crf_1080p, 33)
+
+        # 3. 10-bit HDR video -> capped at 32 for banding protection
+        info_hdr = VideoInfo(
+            path="hdr.mp4", duration=6.0, width=1920, height=1080, fps=30.0,
+            video_codec="hevc", audio_codec="aac", pix_fmt="yuv420p10le", bit_depth=10,
+            is_hdr=True, size_bytes=17_000_000
+        )
+        crf_hdr, reason_hdr = compute_adaptive_video_crf(info_hdr, 30)
+        self.assertEqual(crf_hdr, 32)
+
+        # 4. 720p or lower standard test -> floor at 30
         info_720 = VideoInfo(
             path="dummy.mp4", duration=10.0, width=1280, height=720, fps=30.0,
             video_codec="h264", audio_codec="aac", pix_fmt="yuv420p", bit_depth=8,
             is_hdr=False, size_bytes=5_000_000
         )
-        crf_720, reason_720 = compute_adaptive_video_crf(info_720, 28)
-        self.assertEqual(crf_720, 26)
+        crf_720, reason_720 = compute_adaptive_video_crf(info_720, 30)
+        self.assertEqual(crf_720, 30)
 
     def test_qa_rejects_insufficient_savings(self):
         # When required savings is impossible (e.g. max_size_ratio=0.0001, requiring 99.99% savings),

@@ -109,8 +109,8 @@ Recursively converts remote `.mp4` and `.mov` videos to AV1 using SVT-AV1 with Q
 # Preview candidate videos:
 node meganz_utils/index.js convert-video --path="kashmir" --dry-run
 
-# Run high-quality conversion (CRF 28, Preset 6, 2 threads):
-node meganz_utils/index.js convert-video --path="kashmir" -crf 28 --preset 6
+# Run high-quality conversion (CRF 30, Preset 8, 2 threads):
+node meganz_utils/index.js convert-video --path="kashmir" -crf 30 --preset 8
 ```
 
 ### Day-wise Photo Organizing

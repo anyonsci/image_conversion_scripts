@@ -363,8 +363,8 @@ async function processVideo(item, config) {
     appendToLogFile(config.logFilePath, `Downloaded "${fileName}" (${formatBytes(downloadedSize)})`);
 
     // Step 2: Run convert_video_to_av1 script
-    const crf = config.crf || 28;
-    const preset = config.preset || 6;
+    const crf = config.crf || 30;
+    const preset = config.preset || 8;
     const threads = config.threads || 2;
     const audioCodec = config.audioCodec || 'auto';
     const audioBitrate = config.audioBitrate || '192k';
@@ -550,8 +550,8 @@ async function runConvertVideoTask(storage, targetFolder, options = {}) {
     convertScriptPath: options.convertScriptPath
       ? resolveHomePath(options.convertScriptPath)
       : detectVideoConvertScriptPath(),
-    crf: options.crf || process.env.VIDEO_CRF || 28,
-    preset: options.preset || process.env.VIDEO_PRESET || 6,
+    crf: options.crf || process.env.VIDEO_CRF || 30,
+    preset: options.preset || process.env.VIDEO_PRESET || 8,
     adaptiveQuality: options.adaptiveQuality !== false,
     minSavingsPct: options.minSavingsPct != null ? parseFloat(options.minSavingsPct) : 5.0,
     threads: options.threads || process.env.VIDEO_THREADS || 2,
