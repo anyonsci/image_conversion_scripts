@@ -48,6 +48,10 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         help=f"Bitrate for re-encoded audio (default: {DEFAULT_AUDIO_BITRATE})",
     )
     parser.add_argument(
+        "--min-savings-pct", type=float, default=5.0,
+        help="Minimum percentage of space saved required for QA pass (default: 5.0, rejects conversion if savings < 5%% or size increases)",
+    )
+    parser.add_argument(
         "--delete-original", action="store_true", default=False,
         help="Delete source video ONLY after successful conversion and QA verification",
     )
@@ -99,8 +103,11 @@ def main(args: list[str] | None = None) -> int:
         delete_original=parsed.delete_original,
     )
 
+    max_size_ratio = max(0.01, (100.0 - parsed.min_savings_pct) / 100.0)
+
     qa_settings = QaSettings(
         verify=not parsed.no_verify,
+        max_size_ratio=max_size_ratio,
         quarantine_dir=str(parsed.quarantine) if parsed.quarantine else None,
     )
 

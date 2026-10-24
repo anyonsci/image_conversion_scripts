@@ -32,12 +32,20 @@ class VideoQualityAssessor:
         if out_size < 1000:
             raise QaError(f"QA Failed: Converted video is suspiciously small ({out_size} bytes)")
 
-        # 1. Size ratio check
+        # 1. Size ratio check (must achieve at least 5% space savings; no file bloat or negligible compression)
         if source_info.size_bytes > 0:
             ratio = out_size / source_info.size_bytes
-            if ratio < self._qa.min_size_ratio or ratio > self._qa.max_size_ratio:
+            savings_pct = (1.0 - ratio) * 100.0
+            if ratio > self._qa.max_size_ratio:
+                min_saving_pct = (1.0 - self._qa.max_size_ratio) * 100.0
                 raise QaError(
-                    f"QA Failed: Suspicious size ratio ({ratio:.3f}). "
+                    f"QA Failed: Insufficient compression. Converted AV1 ({out_size} bytes) is "
+                    f"{ratio:.1%} of original ({source_info.size_bytes} bytes), saving only {savings_pct:.1f}% "
+                    f"(minimum required savings: {min_saving_pct:.0f}%)."
+                )
+            if ratio < self._qa.min_size_ratio:
+                raise QaError(
+                    f"QA Failed: Suspiciously small size ratio ({ratio:.3f}). "
                     f"AV1: {out_size} bytes vs Source: {source_info.size_bytes} bytes"
                 )
 

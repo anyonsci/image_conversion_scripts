@@ -18,28 +18,28 @@ class TestVideoConverter(unittest.TestCase):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.work_dir = Path(cls.temp_dir.name)
 
-        # Generate a small 1-second test MP4 (H264 + AAC)
+        # Generate a small 1-second test MP4 (H264 + AAC, high quality source ~60KB)
         cls.mp4_src = cls.work_dir / "sample.mp4"
         subprocess.run(
             [
                 cls.tools.ffmpeg_bin, "-y",
                 "-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=15",
                 "-f", "lavfi", "-i", "sine=frequency=800:duration=1",
-                "-c:v", "libx264", "-c:a", "aac",
+                "-c:v", "libx264", "-crf", "15", "-c:a", "aac",
                 str(cls.mp4_src),
             ],
             capture_output=True,
             check=True,
         )
 
-        # Generate a small 1-second test MOV (H264 + PCM audio)
+        # Generate a small 1-second test MOV (H264 + PCM audio, high quality source)
         cls.mov_src = cls.work_dir / "sample.mov"
         subprocess.run(
             [
                 cls.tools.ffmpeg_bin, "-y",
                 "-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=15",
                 "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
-                "-c:v", "libx264", "-c:a", "pcm_s16le",
+                "-c:v", "libx264", "-crf", "15", "-c:a", "pcm_s16le",
                 str(cls.mov_src),
             ],
             capture_output=True,
@@ -130,6 +130,22 @@ class TestVideoConverter(unittest.TestCase):
         )
         crf_720, reason_720 = compute_adaptive_video_crf(info_720, 28)
         self.assertEqual(crf_720, 26)
+
+    def test_qa_rejects_insufficient_savings(self):
+        # When required savings is impossible (e.g. max_size_ratio=0.0001, requiring 99.99% savings),
+        # QA must reject the output and return REJECTED status
+        encode_settings = EncodeSettings(crf=28, preset=8, threads=1)
+        qa_settings = QaSettings(verify=True, max_size_ratio=0.0001)
+        converter = VideoConverter(self.tools, encode_settings, qa_settings)
+
+        out_path = self.work_dir / "sample_rejected.av1.mp4"
+        res = converter.convert_file(self.mp4_src, out_path)
+
+        self.assertEqual(res.status, ConvertStatus.REJECTED)
+        self.assertFalse(res.qa_passed)
+        self.assertIn("Insufficient compression", res.error_message)
+        # Verify output file was cleaned up on rejection
+        self.assertFalse(out_path.exists())
 
 
 if __name__ == "__main__":

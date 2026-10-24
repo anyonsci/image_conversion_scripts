@@ -369,6 +369,10 @@ async function processVideo(item, config) {
       '--audio-bitrate', audioBitrate,
     ];
 
+    if (config.minSavingsPct != null) {
+      cmd.push('--min-savings-pct', String(config.minSavingsPct));
+    }
+
     if (config.adaptiveQuality !== false) {
       cmd.push('--adaptive-quality');
     } else {
@@ -533,6 +537,7 @@ async function runConvertVideoTask(storage, targetFolder, options = {}) {
     crf: options.crf || process.env.VIDEO_CRF || 28,
     preset: options.preset || process.env.VIDEO_PRESET || 6,
     adaptiveQuality: options.adaptiveQuality !== false,
+    minSavingsPct: options.minSavingsPct != null ? parseFloat(options.minSavingsPct) : 5.0,
     threads: options.threads || process.env.VIDEO_THREADS || 2,
     audioCodec: options.audioCodec || 'auto',
     audioBitrate: options.audioBitrate || '192k',

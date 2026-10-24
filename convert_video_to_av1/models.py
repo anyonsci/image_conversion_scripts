@@ -55,7 +55,7 @@ class QaSettings:
     verify: bool = True
     max_duration_diff_sec: float = 1.0
     min_size_ratio: float = 0.01
-    max_size_ratio: float = 2.5
+    max_size_ratio: float = 0.95  # Must save at least 5% (out_size <= 0.95 * orig_size)
     quarantine_dir: Optional[str] = None
 
 
