@@ -113,6 +113,22 @@ class VideoConverter:
                 error_message="Output file already exists",
             )
 
+        # Check if source video is already heavily compressed (e.g. WhatsApp, web video)
+        if self._encode.skip_low_bitrate and not self._force and info.is_low_bitrate:
+            kbps = info.bitrate_bps / 1000.0 if info.bitrate_bps > 0 else 0
+            return ConvertResult(
+                status=ConvertStatus.SKIPPED,
+                source=str(source),
+                output=str(output),
+                original_size=info.size_bytes,
+                converted_size=info.size_bytes,
+                duration_sec=info.duration,
+                error_message=(
+                    f"Video is already highly compressed (Bitrate: {kbps:.0f} kbps, "
+                    f"BPPF: {info.bppf:.3f}). Skipping to prevent generation loss and CPU waste."
+                ),
+            )
+
         if self._dry_run:
             return ConvertResult(
                 status=ConvertStatus.SKIPPED,

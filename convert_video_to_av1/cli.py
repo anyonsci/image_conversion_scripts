@@ -32,6 +32,10 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         help="Dynamically scale AV1 CRF (30-34) based on resolution, source bitrate, and HDR bit-depth (default: true)",
     )
     parser.add_argument(
+        "--skip-low-bitrate", action=argparse.BooleanOptionalAction, default=True,
+        help="Skip already heavily compressed videos (e.g. WhatsApp / web videos with bitrate < 1.2 Mbps or BPPF < 0.04) to prevent generation loss (default: true)",
+    )
+    parser.add_argument(
         "-p", "--preset", type=int, default=DEFAULT_PRESET,
         help=f"SVT-AV1 preset 0-13 (default: {DEFAULT_PRESET})",
     )
@@ -101,6 +105,7 @@ def main(args: list[str] | None = None) -> int:
         crf=parsed.crf,
         preset=parsed.preset,
         adaptive_quality=parsed.adaptive_quality,
+        skip_low_bitrate=parsed.skip_low_bitrate,
         audio_codec=parsed.audio_codec,
         audio_bitrate=parsed.audio_bitrate,
         threads=parsed.threads,

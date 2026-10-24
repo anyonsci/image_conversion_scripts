@@ -36,12 +36,39 @@ class VideoInfo:
     def is_av1(self) -> bool:
         return self.video_codec.lower() in ("av1", "av01")
 
+    @property
+    def bitrate_bps(self) -> float:
+        if self.duration > 0 and self.size_bytes > 0:
+            return (self.size_bytes * 8.0) / self.duration
+        return 0.0
+
+    @property
+    def bppf(self) -> float:
+        pixels = self.width * self.height
+        if self.duration > 0 and pixels > 0 and self.fps > 0 and self.size_bytes > 0:
+            return (self.size_bytes * 8.0) / (pixels * self.fps * self.duration)
+        return 0.0
+
+    @property
+    def is_low_bitrate(self) -> bool:
+        """Detects if video is already heavily compressed (e.g. WhatsApp, web video, social clips)."""
+        # WhatsApp or low-bitrate web video: small/medium file (< 25MB) with low BPPF (< 0.045)
+        # or low bitrate on HD video (< 1.2 Mbps on >= 720p)
+        if 0 < self.size_bytes < 25 * 1024 * 1024 and self.duration > 0:
+            if 0 < self.bppf < 0.045:
+                return True
+            pixels = self.width * self.height
+            if pixels >= 1280 * 720 and 0 < self.bitrate_bps < 1_200_000:
+                return True
+        return False
+
 
 @dataclass(frozen=True)
 class EncodeSettings:
-    crf: int = 28
-    preset: int = 6
+    crf: int = 30
+    preset: int = 8
     adaptive_quality: bool = True
+    skip_low_bitrate: bool = True
     svt_params: str = "tune=0:fast-decode=1"
     audio_codec: str = "auto"
     audio_bitrate: str = "192k"

@@ -97,6 +97,8 @@ Video Convert Options:
   --audio-bitrate <rate>    Audio bitrate for re-encoded audio (default: '192k')
   --adaptive-quality        Dynamically tune CRF (30-34) based on resolution, bitrate, and bit-depth (default: true)
   --no-adaptive-quality     Disable adaptive quality and use fixed -crf for all videos
+  --skip-low-bitrate        Skip pre-compressed videos (e.g. WhatsApp / web clips < 1.2 Mbps) (default: true)
+  --no-skip-low-bitrate     Force transcoding even on already highly compressed videos
 
 Examples:
   # Upload thumbnails for local AVIF files in remote folder "mummy_parna_26":
@@ -144,6 +146,7 @@ function parseCLI() {
     validate: true,
     minSSIM: process.env.MIN_SSIM ? parseFloat(process.env.MIN_SSIM) : 0.85,
     skipUltraHdr: true,
+    skipLowBitrate: true,
     crf: parseInt(process.env.VIDEO_CRF, 10) || 30,
     preset: parseInt(process.env.VIDEO_PRESET, 10) || 8,
     threads: parseInt(process.env.VIDEO_THREADS, 10) || 2,
@@ -236,13 +239,17 @@ function parseCLI() {
     } else if (arg === '--skip-ultrahdr' || arg === '--skip-hdr') {
       options.skipUltraHdr = true;
     } else if (arg === '-crf' || arg === '--crf') {
-      options.crf = parseInt(args[++i], 10) || 28;
+      options.crf = parseInt(args[++i], 10) || 30;
     } else if (arg.startsWith('--crf=')) {
-      options.crf = parseInt(arg.split('=')[1], 10) || 28;
+      options.crf = parseInt(arg.split('=')[1], 10) || 30;
     } else if (arg === '-p' || arg === '--preset') {
-      options.preset = parseInt(args[++i], 10) || 6;
+      options.preset = parseInt(args[++i], 10) || 8;
     } else if (arg.startsWith('--preset=')) {
-      options.preset = parseInt(arg.split('=')[1], 10) || 6;
+      options.preset = parseInt(arg.split('=')[1], 10) || 8;
+    } else if (arg === '--skip-low-bitrate') {
+      options.skipLowBitrate = true;
+    } else if (arg === '--no-skip-low-bitrate') {
+      options.skipLowBitrate = false;
     } else if (arg === '-t' || arg === '--threads') {
       options.threads = parseInt(args[++i], 10) || 2;
     } else if (arg.startsWith('--threads=')) {

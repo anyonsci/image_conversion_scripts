@@ -149,6 +149,32 @@ class TestVideoConverter(unittest.TestCase):
         crf_720, reason_720 = compute_adaptive_video_crf(info_720, 30)
         self.assertEqual(crf_720, 30)
 
+    def test_skip_low_bitrate_whatsapp_video(self):
+        # Create a small, low-bitrate synthetic video (simulating WhatsApp 400 kbps clip)
+        low_br_src = self.work_dir / "whatsapp_sample.mp4"
+        subprocess.run(
+            [
+                self.tools.ffmpeg_bin, "-y",
+                "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=15",
+                "-c:v", "libx264", "-b:v", "30k", "-maxrate", "40k", "-bufsize", "80k",
+                str(low_br_src),
+            ],
+            capture_output=True,
+            check=True,
+        )
+
+        # By default (skip_low_bitrate=True), it should skip to prevent generation loss
+        encode_settings = EncodeSettings(skip_low_bitrate=True)
+        qa_settings = QaSettings(verify=False)
+        converter = VideoConverter(self.tools, encode_settings, qa_settings)
+
+        out_path = self.work_dir / "whatsapp_sample.av1.mp4"
+        res = converter.convert_file(low_br_src, out_path)
+
+        self.assertEqual(res.status, ConvertStatus.SKIPPED)
+        self.assertIn("already highly compressed", res.error_message)
+        self.assertFalse(out_path.exists())
+
     def test_qa_rejects_insufficient_savings(self):
         # When required savings is impossible (e.g. max_size_ratio=0.0001, requiring 99.99% savings),
         # QA must reject the output and return REJECTED status

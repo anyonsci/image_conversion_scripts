@@ -391,6 +391,12 @@ async function processVideo(item, config) {
       cmd.push('--no-adaptive-quality');
     }
 
+    if (config.skipLowBitrate !== false) {
+      cmd.push('--skip-low-bitrate');
+    } else {
+      cmd.push('--no-skip-low-bitrate');
+    }
+
     if (config.validate === false) {
       cmd.push('--no-verify');
     }
@@ -403,6 +409,16 @@ async function processVideo(item, config) {
     const { stdout, stderr } = await execPromise(conversionCmd);
 
     if (!fs.existsSync(tempAv1Path) || fs.statSync(tempAv1Path).size === 0) {
+      if (stdout && stdout.includes('SKIPPED')) {
+        const skipLine = stdout.split('\n').find((l) => l.includes('SKIPPED')) || stdout;
+        logger.info(`Skipped "${fileName}": ${skipLine.trim()}`);
+        return {
+          status: 'skipped',
+          fileName,
+          originalSize: downloadedSize,
+          convertedSize: downloadedSize,
+        };
+      }
       throw new Error(`Converted AV1 video was not created at "${tempAv1Path}": ${stderr || stdout}`);
     }
 
@@ -505,13 +521,25 @@ async function runSinglePass(storage, targetFolder, config) {
     const progress = `[${i + 1}/${toProcess.length}]`;
     logger.info(`\n--- ${progress} Processing Video "${item.relativePath}" ---`);
 
+    // Remote Zero-Bandwidth WhatsApp pre-check (< 15MB)
+    const isWhatsApp = /WhatsApp|WA\d{4}|VID-\d{8}-WA/i.test(item.name);
+    if (config.skipLowBitrate !== false && !config.force && isWhatsApp && item.size < 15 * 1024 * 1024) {
+      logger.info(
+        `[Zero-Bandwidth Skip] Skipping WhatsApp video "${item.relativePath}" (already highly compressed, ${formatBytes(item.size)}).`
+      );
+      skippedCount++;
+      totalOrigBytes += item.size;
+      totalConvBytes += item.size;
+      continue;
+    }
+
     try {
       const result = await processVideo(item, config);
       if (result.status === 'success') {
         successCount++;
         totalOrigBytes += result.originalSize;
         totalConvBytes += result.convertedSize;
-      } else if (result.status === 'skipped_existing') {
+      } else if (result.status === 'skipped_existing' || result.status === 'skipped') {
         skippedCount++;
         totalOrigBytes += result.originalSize;
         totalConvBytes += result.convertedSize;
@@ -553,6 +581,7 @@ async function runConvertVideoTask(storage, targetFolder, options = {}) {
     crf: options.crf || process.env.VIDEO_CRF || 30,
     preset: options.preset || process.env.VIDEO_PRESET || 8,
     adaptiveQuality: options.adaptiveQuality !== false,
+    skipLowBitrate: options.skipLowBitrate !== false,
     minSavingsPct: options.minSavingsPct != null ? parseFloat(options.minSavingsPct) : 5.0,
     threads: options.threads || process.env.VIDEO_THREADS || 2,
     audioCodec: options.audioCodec || 'auto',

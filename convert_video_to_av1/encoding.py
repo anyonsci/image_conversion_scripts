@@ -80,6 +80,11 @@ class VideoEncoder:
             target_crf, reason = compute_adaptive_video_crf(info, self._settings.crf)
             print(f"  [Adaptive Quality] Using CRF {target_crf} (base: {self._settings.crf}, {reason})", flush=True)
 
+        preset = self._settings.preset
+        if info.is_low_bitrate:
+            preset = max(preset, 10)
+            print(f"  [Low-Bitrate Fast-Pass] Source is pre-compressed ({info.bitrate_bps / 1000:.0f} kbps); using fast Preset {preset}", flush=True)
+
         cmd = [
             self._tools.ffmpeg_bin,
             "-y",
@@ -90,7 +95,7 @@ class VideoEncoder:
             "-map", "0:a?",
             "-map", "0:s?",
             "-c:v", "libsvtav1",
-            "-preset", str(self._settings.preset),
+            "-preset", str(preset),
             "-crf", str(target_crf),
         ]
 
