@@ -4,6 +4,7 @@
 
 const assert = require('assert');
 const path = require('path');
+const { scanFiles, resolveFolderPath: scannerResolveFolderPath } = require('./lib/scanner');
 
 // Extract or replicate the pure functions from index.js for unit validation
 function resolveFolderPath(root, targetPath) {
@@ -87,6 +88,8 @@ const mockRoot = {
             { name: 'live.HEIC', directory: false, size: 3000 },
             { name: 'burst.heif', directory: false, size: 3500 },
             { name: 'logo.png', directory: false, size: 512 },
+            { name: 'clip.mp4', directory: false, size: 1048576 },
+            { name: 'action.MOV', directory: false, size: 2097152 },
             {
               name: 'Trip',
               directory: true,
@@ -150,5 +153,13 @@ const mountain = foundFromPhotos.find((f) => f.fileName === 'mountain.jpeg');
 assert.strictEqual(foundFromPhotos.find(f => f.fileName === 'mountain.jpeg').relativePath, '2026/Trip/mountain.jpeg');
 assert.strictEqual(foundFromPhotos.find(f => f.fileName === 'mountain.jpeg').parentFolder.name, 'Trip');
 console.log('✔ Test 5 passed: Relative paths and parent folder linking');
+
+// Test 6: Recursive video discovery (MP4 / MOV case-insensitive)
+const foundVideos = scanFiles(photos, { extensions: ['mp4', 'mov', 'm4v'] });
+assert.strictEqual(foundVideos.length, 2);
+const videoNames = foundVideos.map((v) => v.name);
+assert.ok(videoNames.includes('clip.mp4'));
+assert.ok(videoNames.includes('action.MOV'));
+console.log('✔ Test 6 passed: Recursive MP4/MOV discovery (case-insensitive)');
 
 console.log('\nAll unit tests passed successfully!');

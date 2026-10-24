@@ -35,6 +35,7 @@ const { resolveCredentials, connectMega, fetchRawNodes, closeMega } = require('.
 const { resolveFolderPath, parseExtensionFilter } = require('./lib/scanner');
 const { runThumbnailsTask } = require('./tasks/upload_thumbnails');
 const { runConvertTask } = require('./tasks/convert_to_avif');
+const { runConvertVideoTask } = require('./tasks/convert_video_to_av1');
 const { runOrganizeTask } = require('./tasks/organize_daywise');
 
 // ====================================================================
@@ -54,6 +55,7 @@ Commands:
   thumbnails, thumb    Generate and upload sharp, full-frame thumbnails (320px) and previews (1600px)
                        using avifdec + ffmpeg. Reads from local directory to prevent re-downloads.
   convert, avif        Recursively convert remote JPEGs to AVIF, attaching thumbnails, and removing originals.
+  convert-video, video Recursively convert remote MP4/MOV videos to AV1, attaching thumbnails/previews, and removing originals.
   organize, org        Organize photos and videos into day-wise folders (Day 1 - Day 7) based on capture dates.
   help                 Display this help message
 
@@ -87,6 +89,14 @@ Convert Options:
   --no-skip-ultrahdr        Attempt to convert Ultra HDR photos anyway
   --no-verify               Skip similarity validation before deleting source JPEG
 
+Video Convert Options:
+  --crf <num>               AV1 CRF constant rate factor (default: 28, recommended: 26-28)
+  --preset <num>            SVT-AV1 preset 0-13 (default: 6)
+  -t, --threads <num>       Encoding threads (default: 2)
+  --audio-codec <codec>     Audio codec: 'auto', 'copy', 'aac', or 'opus' (default: 'auto')
+  --audio-bitrate <rate>    Audio bitrate for re-encoded audio (default: '192k')
+  --keep-av1-suffix         Keep .av1.mp4 suffix instead of renaming to .mp4
+
 Examples:
   # Upload thumbnails for local AVIF files in remote folder "mummy_parna_26":
   node index.js thumbnails --path="mummy_parna_26" --local-dir="/home/ubuntu/ws/parna_avif"
@@ -99,6 +109,9 @@ Examples:
 
   # Convert remote JPEGs on hourly schedule:
   node index.js convert --path="/" --cron
+
+  # Convert remote MP4/MOV videos in folder to AV1:
+  node index.js convert-video --path="kashmir" -crf 28 --preset 6
 `);
 }
 
@@ -130,6 +143,12 @@ function parseCLI() {
     validate: true,
     minSSIM: process.env.MIN_SSIM ? parseFloat(process.env.MIN_SSIM) : 0.85,
     skipUltraHdr: true,
+    crf: parseInt(process.env.VIDEO_CRF, 10) || 28,
+    preset: parseInt(process.env.VIDEO_PRESET, 10) || 6,
+    threads: parseInt(process.env.VIDEO_THREADS, 10) || 2,
+    audioCodec: process.env.AUDIO_CODEC || 'auto',
+    audioBitrate: process.env.AUDIO_BITRATE || '192k',
+    keepAv1Suffix: false,
     force: false,
     dryRun: false,
     limit: 0,
@@ -214,6 +233,28 @@ function parseCLI() {
       options.skipUltraHdr = false;
     } else if (arg === '--skip-ultrahdr' || arg === '--skip-hdr') {
       options.skipUltraHdr = true;
+    } else if (arg === '-crf' || arg === '--crf') {
+      options.crf = parseInt(args[++i], 10) || 28;
+    } else if (arg.startsWith('--crf=')) {
+      options.crf = parseInt(arg.split('=')[1], 10) || 28;
+    } else if (arg === '-p' || arg === '--preset') {
+      options.preset = parseInt(args[++i], 10) || 6;
+    } else if (arg.startsWith('--preset=')) {
+      options.preset = parseInt(arg.split('=')[1], 10) || 6;
+    } else if (arg === '-t' || arg === '--threads') {
+      options.threads = parseInt(args[++i], 10) || 2;
+    } else if (arg.startsWith('--threads=')) {
+      options.threads = parseInt(arg.split('=')[1], 10) || 2;
+    } else if (arg === '--audio-codec') {
+      options.audioCodec = args[++i];
+    } else if (arg.startsWith('--audio-codec=')) {
+      options.audioCodec = arg.split('=')[1];
+    } else if (arg === '--audio-bitrate') {
+      options.audioBitrate = args[++i];
+    } else if (arg.startsWith('--audio-bitrate=')) {
+      options.audioBitrate = arg.split('=')[1];
+    } else if (arg === '--keep-av1-suffix') {
+      options.keepAv1Suffix = true;
     }
   }
 
@@ -232,7 +273,12 @@ async function main() {
     return;
   }
 
-  const validCommands = ['thumbnails', 'thumb', 'convert', 'avif', 'organize', 'org', 'daywise'];
+  const validCommands = [
+    'thumbnails', 'thumb',
+    'convert', 'avif',
+    'convert-video', 'convert-videos', 'video', 'video-av1',
+    'organize', 'org', 'daywise',
+  ];
   if (!validCommands.includes(cli.command)) {
     console.error(`Error: Unknown command "${cli.command}". Run "node index.js help" for usage.`);
     process.exit(1);
@@ -244,6 +290,8 @@ async function main() {
       cli.ext = ['avif', 'jpg', 'jpeg', 'png', 'webp'];
     } else if (cli.command === 'convert' || cli.command === 'avif') {
       cli.ext = ['jpg', 'jpeg', 'heic', 'heif'];
+    } else if (cli.command === 'convert-video' || cli.command === 'convert-videos' || cli.command === 'video' || cli.command === 'video-av1') {
+      cli.ext = ['mp4', 'mov', 'm4v'];
     }
   }
 
@@ -277,6 +325,8 @@ async function main() {
       await runThumbnailsTask(storage, targetFolder, cli, rawNodes);
     } else if (cli.command === 'convert' || cli.command === 'avif') {
       await runConvertTask(storage, targetFolder, cli);
+    } else if (cli.command === 'convert-video' || cli.command === 'convert-videos' || cli.command === 'video' || cli.command === 'video-av1') {
+      await runConvertVideoTask(storage, targetFolder, cli);
     }
   } finally {
     closeMega(storage);

@@ -80,7 +80,27 @@ Generates sharp 320px thumbnails and 1600px previews for all AVIF files:
 node meganz_utils/index.js thumbnails --path="/"
 ```
 
-### 5. Organize Photos & Videos Day-Wise (Day 1 - Day 7)
+### 5. Convert Remote Videos (MP4 / MOV) to AV1
+Streams remote MP4/MOV videos to disk, converts video streams to AV1 via SVT-AV1 with audio preservation and full decode QA testing, attaches thumbnails/previews, uploads back to MEGA, and removes originals:
+```bash
+# Preview candidates:
+node meganz_utils/index.js convert-video --path="trips" --dry-run
+
+# Run high-quality conversion (CRF 28, Preset 6, 2 threads):
+node meganz_utils/index.js convert-video --path="trips" -crf 28 --preset 6
+```
+
+### 6. Local Standalone Video Conversion (CLI)
+Convert local video files or directories directly without MEGA:
+```bash
+# Convert a single video:
+./convert_video_to_av1/convert_video_to_av1.sh input.mov -o output.mp4 -crf 28 -p 6
+
+# Batch convert a folder recursively:
+./convert_video_to_av1/convert_video_to_av1.sh /path/to/videos -crf 28 -p 6
+```
+
+### 7. Organize Photos & Videos Day-Wise (Day 1 - Day 7)
 Sorts trip photos and videos into day-wise folders (`Day 1` = Oct 10 to `Day 7` = Oct 16) using true capture dates (EXIF, QuickTime atoms, filename regex, sequence interpolation) without downloading full files. Moves are executed server-side via MEGA's API:
 ```bash
 # Preview distribution (dry-run):
@@ -97,9 +117,12 @@ node meganz_utils/index.js organize --path="kashmir oct 26"
 - [`setup_ubuntu.sh`](setup_ubuntu.sh): Top-level automated Ubuntu installer.
 - [`convert_to_avif/`](convert_to_avif/): Standalone Python AVIF encoding and QA engine with gain-map support.
   - [`install_ubuntu.sh`](convert_to_avif/install_ubuntu.sh): Low-level C/C++ dependency and libavif build script.
+- [`convert_video_to_av1/`](convert_video_to_av1/): Standalone Python AV1 video encoding and QA engine (SVT-AV1, HDR 10-bit preservation, faststart).
+  - [`convert_video_to_av1.sh`](convert_video_to_av1/convert_video_to_av1.sh): Executable CLI runner.
 - [`meganz_utils/`](meganz_utils/): Node.js automation suite for MEGA.nz cloud drive operations.
   - [`index.js`](meganz_utils/index.js): CLI entrypoint.
-  - [`tasks/convert_to_avif.js`](meganz_utils/tasks/convert_to_avif.js): Remote download $\rightarrow$ convert $\rightarrow$ validate $\rightarrow$ upload $\rightarrow$ delete workflow.
+  - [`tasks/convert_to_avif.js`](meganz_utils/tasks/convert_to_avif.js): Remote image download $\rightarrow$ convert $\rightarrow$ validate $\rightarrow$ upload $\rightarrow$ delete workflow.
+  - [`tasks/convert_video_to_av1.js`](meganz_utils/tasks/convert_video_to_av1.js): Remote video streaming $\rightarrow$ AV1 encode $\rightarrow$ decode QA $\rightarrow$ upload $\rightarrow$ delete workflow.
   - [`tasks/upload_thumbnails.js`](meganz_utils/tasks/upload_thumbnails.js): Sharp thumbnail/preview generator.
   - [`tasks/organize_daywise.js`](meganz_utils/tasks/organize_daywise.js): Fast day-wise folder organizer with server-side instant moves.
   - [`test_logic.js`](meganz_utils/test_logic.js): Unit test suite.

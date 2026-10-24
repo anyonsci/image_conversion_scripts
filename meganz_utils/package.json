@@ -15,6 +15,8 @@
     "convert:once": "node index.js convert --once",
     "convert:cron": "node index.js convert --cron",
     "convert:dry-run": "node index.js convert --dry-run",
+    "convert:video": "node index.js convert-video",
+    "convert:video:dry-run": "node index.js convert-video --dry-run",
     "test": "node test_logic.js"
   },
   "keywords": [

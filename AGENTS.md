@@ -10,12 +10,19 @@ The repository provides a dual-layer toolchain for high-fidelity photo conversio
 
 ```text
 image_conversion_scripts/
-├── convert_to_avif/            # Layer 1: Python AVIF encoding & QA verification engine
+├── convert_to_avif/            # Layer 1: Python AVIF image encoding & QA verification engine
 │   ├── encoding.py             # libavif / avifenc CLI wrapper, adaptive quality scaling
 │   ├── gain_maps.py            # Ultra HDR / Apple HDR gain map extraction & injection
 │   ├── probing.py             # Format detection, entropy analysis, and dimension probing
 │   ├── qa.py                   # SSIM perceptual similarity scoring & validation
 │   └── main.py                 # Standalone CLI entrypoint
+│
+├── convert_video_to_av1/       # Layer 1.5: Python AV1 video encoding & QA verification engine
+│   ├── encoding.py             # ffmpeg + libsvtav1 wrapper, HDR 10-bit preservation, faststart
+│   ├── probing.py             # ffprobe video/audio codec, resolution, rotation & color tags
+│   ├── qa.py                   # Lossless null-sink decode test, duration parity & resolution check
+│   ├── pipeline.py             # Single-file & batch recursive conversion orchestration
+│   └── cli.py                  # Standalone CLI entrypoint
 │
 ├── meganz_utils/               # Layer 2: Node.js automation suite for MEGA.nz
 │   ├── lib/
@@ -24,6 +31,7 @@ image_conversion_scripts/
 │   │   └── logger.js           # Timestamped logging formatting
 │   ├── tasks/
 │   │   ├── convert_to_avif.js  # Task 1: Remote JPEG/HEIC -> AVIF sync pipeline
+│   │   ├── convert_video_to_av1.js # Task 1b: Remote MP4/MOV -> AV1 streaming pipeline
 │   │   ├── upload_thumbnails.js# Task 2: High-resolution thumbnail/preview generator
 │   │   └── organize_daywise.js # Task 3: Day-wise trip organizer (Day 1 - Day 7)
 │   └── index.js                # Unified CLI entrypoint & dispatcher
@@ -42,7 +50,14 @@ image_conversion_scripts/
      1. Converted AVIF passes SSIM verification (`SSIM >= minSSIM`, default 0.85).
      2. Resolution dimensions strictly match the original.
      3. AVIF file is successfully uploaded to MEGA.
-3. **Zero-Bandwidth Operations First**:
+   - In `convert_video_to_av1.js`, original MP4/MOVs must **only** be deleted after:
+     1. Converted AV1 passes full-stream decode test (`ffmpeg -v error -i <file> -f null -`).
+     2. Duration matches source within tolerance and resolution matches.
+     3. AV1 video is successfully uploaded to MEGA.
+3. **RAM-Safe Video Streaming**:
+   - Videos (100MB – 2GB+) must never be downloaded into in-memory buffers (`downloadBuffer()`).
+   - Always stream to/from local disk (`file.download().pipe(...)` and `fs.createReadStream().pipe(folder.upload())`) to protect instances from OOM crashes.
+4. **Zero-Bandwidth Operations First**:
    - **Day-wise Organizing**: Never download full photos to move them. Extract dates via filename regex (0 bytes) or header range reads (~128 KB for EXIF, ~1 KB for QuickTime atoms). Move files using MEGA's server-side `moveTo()` API.
    - **Thumbnails**: Point to local directories (`--local-dir`) whenever files exist locally to prevent redundant downloads.
 
@@ -85,6 +100,16 @@ When executing long-running conversions on remote servers, always run inside a `
 ```bash
 tmux new -s conversion
 node meganz_utils/index.js convert --path="kashmir" --no-skip-ultrahdr 2>&1 | tee -a /home/ubuntu/ws/conversion_kashmir.log
+```
+
+### Video Conversion to AV1
+Recursively converts remote `.mp4` and `.mov` videos to AV1 using SVT-AV1 with QA validation:
+```bash
+# Preview candidate videos:
+node meganz_utils/index.js convert-video --path="kashmir" --dry-run
+
+# Run high-quality conversion (CRF 28, Preset 6, 2 threads):
+node meganz_utils/index.js convert-video --path="kashmir" -crf 28 --preset 6
 ```
 
 ### Day-wise Photo Organizing
