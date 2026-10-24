@@ -59,6 +59,7 @@ coverage.xml
 
 # Logs and conversion artifacts
 *.log
+video_conversion.log
 *.tmp
 *_avif/
 

@@ -1,6 +1,8 @@
 node_modules/
 .env
 .env.local
+*.log
+video_conversion.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
