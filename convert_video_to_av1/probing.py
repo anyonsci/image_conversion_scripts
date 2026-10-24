@@ -123,6 +123,10 @@ class VideoProber:
                     except ValueError:
                         pass
 
+        # Creation time detection (EXIF/QuickTime recording timestamp)
+        format_tags = fmt.get("tags", {})
+        creation_time = tags.get("creation_time") or format_tags.get("creation_time")
+
         size_bytes = int(fmt.get("size", p.stat().st_size if p.exists() else 0))
         acodec = audio_stream.get("codec_name") if audio_stream else None
 
@@ -138,6 +142,7 @@ class VideoProber:
             bit_depth=bit_depth,
             is_hdr=is_hdr,
             rotation=rotation,
+            creation_time=creation_time,
             color_primaries=color_primaries,
             color_transfer=color_transfer,
             color_space=color_space,

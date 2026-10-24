@@ -148,7 +148,7 @@ async function downloadVideoWithRetry(file, destPath, maxAttempts = 3) {
  * Uploads a video file from local disk to MEGA using streaming (zero memory buffering)
  * with thumbnail/preview attribute handling and retry logic.
  */
-async function uploadVideoStreamWithRetry(parentFolder, fileName, localFilePath, thumbBuffer, previewBuffer, maxAttempts = 3) {
+async function uploadVideoStreamWithRetry(parentFolder, fileName, localFilePath, thumbBuffer, previewBuffer, originalTimestamp = null, maxAttempts = 3) {
   let currentThumb = thumbBuffer;
   let currentPreview = previewBuffer;
   const fileSize = fs.statSync(localFilePath).size;
@@ -159,6 +159,7 @@ async function uploadVideoStreamWithRetry(parentFolder, fileName, localFilePath,
         name: fileName,
         size: fileSize,
       };
+      if (originalTimestamp) uploadOptions.timestamp = originalTimestamp;
       if (currentThumb) uploadOptions.thumbnailImage = currentThumb;
       if (currentPreview) uploadOptions.previewImage = currentPreview;
 
@@ -359,6 +360,12 @@ async function processVideo(item, config) {
     appendToLogFile(config.logFilePath, `Streaming "${fileName}" (${formatBytes(file.size)}) from MEGA to local disk`);
     await downloadVideoWithRetry(file, tempSourcePath);
     const downloadedSize = fs.statSync(tempSourcePath).size;
+    if (file.timestamp) {
+      try {
+        const fileDate = new Date(file.timestamp * 1000);
+        fs.utimesSync(tempSourcePath, fileDate, fileDate);
+      } catch (_) {}
+    }
     logger.success(`Downloaded "${fileName}" (${formatBytes(downloadedSize)}).`);
     appendToLogFile(config.logFilePath, `Downloaded "${fileName}" (${formatBytes(downloadedSize)})`);
 
@@ -423,6 +430,12 @@ async function processVideo(item, config) {
     }
 
     const convertedSize = fs.statSync(tempAv1Path).size;
+    if (file.timestamp) {
+      try {
+        const fileDate = new Date(file.timestamp * 1000);
+        fs.utimesSync(tempAv1Path, fileDate, fileDate);
+      } catch (_) {}
+    }
     const savedBytes = downloadedSize - convertedSize;
     const ratio = (((savedBytes) / downloadedSize) * 100).toFixed(1);
     logger.info(
@@ -440,7 +453,8 @@ async function processVideo(item, config) {
       targetAv1Name,
       tempAv1Path,
       thumbBuf,
-      prevBuf
+      prevBuf,
+      file.timestamp
     );
     logger.success(`Upload complete for "${targetAv1Name}".`);
     appendToLogFile(config.logFilePath, `Upload complete for "${targetAv1Name}"`);

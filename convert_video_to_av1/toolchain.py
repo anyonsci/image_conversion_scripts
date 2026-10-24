@@ -20,11 +20,13 @@ class Toolchain:
     ffmpeg_bin: str
     ffprobe_bin: str
     has_libsvtav1: bool
+    exiftool_bin: Optional[str] = None
 
     @classmethod
     def detect(cls) -> "Toolchain":
         ffmpeg_bin = os.getenv("FFMPEG") or shutil.which("ffmpeg")
         ffprobe_bin = os.getenv("FFPROBE") or shutil.which("ffprobe")
+        exiftool_bin = os.getenv("EXIFTOOL") or shutil.which("exiftool")
 
         missing = []
         if not ffmpeg_bin:
@@ -58,4 +60,5 @@ class Toolchain:
             ffmpeg_bin=ffmpeg_bin,
             ffprobe_bin=ffprobe_bin,
             has_libsvtav1=True,
+            exiftool_bin=exiftool_bin,
         )

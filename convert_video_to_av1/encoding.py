@@ -128,12 +128,20 @@ class VideoEncoder:
                 if self._settings.audio_codec != "copy":
                     cmd.extend(["-b:a", self._settings.audio_bitrate])
 
+        # Preserve all global metadata and original creation time
+        cmd.extend(["-map_metadata", "0"])
+        if info.creation_time:
+            cmd.extend(["-metadata", f"creation_time={info.creation_time}"])
+
         # Subtitle handling (mov_text is the standard for MP4 containers)
         cmd.extend(["-c:s", "mov_text"])
 
-        # Container streaming flags
+        # Container streaming and full metadata tag preservation
+        movflags = []
         if self._settings.faststart:
-            cmd.extend(["-movflags", "+faststart"])
+            movflags.append("+faststart")
+        movflags.append("+use_metadata_tags")
+        cmd.extend(["-movflags", "".join(movflags)])
 
         cmd.append(str(output_path))
         return cmd

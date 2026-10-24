@@ -175,6 +175,37 @@ class TestVideoConverter(unittest.TestCase):
         self.assertIn("already highly compressed", res.error_message)
         self.assertFalse(out_path.exists())
 
+    def test_metadata_preservation(self):
+        # Create a small 0.5-second test video with embedded creation_time and location tags
+        meta_src = self.work_dir / "meta_source.mp4"
+        subprocess.run(
+            [
+                self.tools.ffmpeg_bin, "-y",
+                "-f", "lavfi", "-i", "testsrc=duration=0.5:size=320x240:rate=15",
+                "-metadata", "creation_time=2024-10-12T09:36:04.000000Z",
+                "-metadata", "location=+34.0552+074.3837/",
+                "-c:v", "libx264", "-crf", "15",
+                str(meta_src),
+            ],
+            capture_output=True,
+            check=True,
+        )
+
+        encode_settings = EncodeSettings(crf=32, preset=8, threads=1)
+        qa_settings = QaSettings(verify=False)
+        converter = VideoConverter(self.tools, encode_settings, qa_settings)
+
+        meta_out = self.work_dir / "meta_output.av1.mp4"
+        res = converter.convert_file(meta_src, meta_out)
+
+        self.assertEqual(res.status, ConvertStatus.CONVERTED)
+        self.assertTrue(meta_out.exists())
+
+        # Verify creation_time is preserved in AV1 output
+        prober = VideoProber(self.tools)
+        out_info = prober.probe(meta_out)
+        self.assertEqual(out_info.creation_time, "2024-10-12T09:36:04.000000Z")
+
     def test_qa_rejects_insufficient_savings(self):
         # When required savings is impossible (e.g. max_size_ratio=0.0001, requiring 99.99% savings),
         # QA must reject the output and return REJECTED status

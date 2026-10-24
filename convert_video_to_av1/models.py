@@ -27,6 +27,7 @@ class VideoInfo:
     bit_depth: int
     is_hdr: bool
     rotation: int = 0
+    creation_time: Optional[str] = None
     color_primaries: Optional[str] = None
     color_transfer: Optional[str] = None
     color_space: Optional[str] = None

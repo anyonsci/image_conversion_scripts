@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import Iterable, Optional
@@ -170,13 +172,43 @@ class VideoConverter:
                 qa_passed=False,
             )
 
-        # 4. Atomic move to target
+        # 4. Mirror all metadata (EXIF/QuickTime/XMP) and filesystem timestamps
+        if self._tools.exiftool_bin and temp_out.exists() and source.exists():
+            try:
+                subprocess.run(
+                    [
+                        self._tools.exiftool_bin,
+                        "-overwrite_original",
+                        "-TagsFromFile", str(source),
+                        "-all:all",
+                        "-api", "QuickTimeUTC",
+                        str(temp_out),
+                    ],
+                    capture_output=True,
+                    check=False,
+                )
+            except Exception:
+                pass
+
+        try:
+            if source.exists() and temp_out.exists():
+                shutil.copystat(source, temp_out)
+        except OSError:
+            pass
+
+        # 5. Atomic move to target
         if temp_out.exists():
             temp_out.replace(output)
 
+        try:
+            if source.exists() and output.exists():
+                shutil.copystat(source, output)
+        except OSError:
+            pass
+
         out_size = output.stat().st_size
 
-        # 5. Safe cleanup of source if requested
+        # 6. Safe cleanup of source if requested
         if self._encode.delete_original and output.exists() and output != source:
             try:
                 source.unlink()
