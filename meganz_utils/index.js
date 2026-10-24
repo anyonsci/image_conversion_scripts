@@ -149,6 +149,7 @@ function parseCLI() {
     threads: parseInt(process.env.VIDEO_THREADS, 10) || 2,
     audioCodec: process.env.AUDIO_CODEC || 'auto',
     audioBitrate: process.env.AUDIO_BITRATE || '192k',
+    logFile: process.env.VIDEO_LOG_FILE || null,
     keepAv1Suffix: false,
     force: false,
     dryRun: false,
@@ -254,6 +255,10 @@ function parseCLI() {
       options.audioBitrate = args[++i];
     } else if (arg.startsWith('--audio-bitrate=')) {
       options.audioBitrate = arg.split('=')[1];
+    } else if (arg === '--log-file' || arg === '--log') {
+      options.logFile = args[++i];
+    } else if (arg.startsWith('--log-file=')) {
+      options.logFile = arg.split('=')[1];
     } else if (arg === '--keep-av1-suffix') {
       options.keepAv1Suffix = true;
     }

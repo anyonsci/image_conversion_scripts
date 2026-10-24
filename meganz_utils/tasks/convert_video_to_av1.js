@@ -252,6 +252,15 @@ async function generateVideoPosters(videoPath, thumbPath, prevPath) {
   }
 }
 
+function appendToLogFile(logPath, message) {
+  if (!logPath) return;
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    const ts = new Date().toISOString();
+    fs.appendFileSync(logPath, `[${ts}] [MEGA] ${message}\n`, 'utf8');
+  } catch (_) {}
+}
+
 /**
  * Fast zero-bandwidth inspection to check if a remote video is already AV1 encoded
  * using a small ~64KB ranged read, avoiding full video download.
@@ -347,9 +356,11 @@ async function processVideo(item, config) {
 
     // Step 1: Stream video from MEGA to local disk
     logger.info(`Streaming "${fileName}" from MEGA to local disk...`);
+    appendToLogFile(config.logFilePath, `Streaming "${fileName}" (${formatBytes(file.size)}) from MEGA to local disk`);
     await downloadVideoWithRetry(file, tempSourcePath);
     const downloadedSize = fs.statSync(tempSourcePath).size;
     logger.success(`Downloaded "${fileName}" (${formatBytes(downloadedSize)}).`);
+    appendToLogFile(config.logFilePath, `Downloaded "${fileName}" (${formatBytes(downloadedSize)})`);
 
     // Step 2: Run convert_video_to_av1 script
     const crf = config.crf || 28;
@@ -367,6 +378,7 @@ async function processVideo(item, config) {
       '-t', String(threads),
       '--audio-codec', audioCodec,
       '--audio-bitrate', audioBitrate,
+      '--log-file', config.logFilePath,
     ];
 
     if (config.minSavingsPct != null) {
@@ -406,6 +418,7 @@ async function processVideo(item, config) {
 
     // Step 4: Stream AV1 video back to MEGA directly as <stem>.av1.mp4
     logger.info(`Uploading "${targetAv1Name}" to parent folder "${parentFolder.name}"...`);
+    appendToLogFile(config.logFilePath, `Uploading "${targetAv1Name}" to parent folder "${parentFolder.name}" (${formatBytes(convertedSize)})`);
     const uploadedFile = await uploadVideoStreamWithRetry(
       parentFolder,
       targetAv1Name,
@@ -414,11 +427,13 @@ async function processVideo(item, config) {
       prevBuf
     );
     logger.success(`Upload complete for "${targetAv1Name}".`);
+    appendToLogFile(config.logFilePath, `Upload complete for "${targetAv1Name}"`);
 
     // Step 5: Delete original remote file
     logger.info(`Deleting original video "${fileName}" from MEGA...`);
     await file.delete();
     logger.success(`Removed original video "${fileName}" from MEGA.`);
+    appendToLogFile(config.logFilePath, `Deleted original video "${fileName}" from MEGA`);
 
     return {
       status: 'success',
@@ -531,6 +546,7 @@ async function runConvertVideoTask(storage, targetFolder, options = {}) {
   const config = {
     ...options,
     tempBaseDir: options.tempBaseDir || process.env.TEMP_BASE_DIR || '/tmp/mega_video',
+    logFilePath: resolveHomePath(options.logFile || process.env.VIDEO_LOG_FILE || path.resolve(process.cwd(), 'video_conversion.log')),
     convertScriptPath: options.convertScriptPath
       ? resolveHomePath(options.convertScriptPath)
       : detectVideoConvertScriptPath(),

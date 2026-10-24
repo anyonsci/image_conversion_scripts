@@ -121,22 +121,61 @@ class VideoEncoder:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         cmd = self.build_ffmpeg_cmd(info, output_path)
 
+        log_path = Path(self._settings.log_file).resolve() if self._settings.log_file else None
         start_time = time.time()
+        start_ts = time.strftime("%Y-%m-%d %H:%M:%S")
+
+        if log_path:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"\n{'='*70}\n")
+                f.write(f"[{start_ts}] Encoding: {info.path}\n")
+                f.write(f"Output: {output_path}\n")
+                f.write(f"Resolution: {info.width}x{info.height} | Duration: {info.duration:.2f}s | FPS: {info.fps}\n")
+                f.write(f"FFmpeg Command: {' '.join(cmd)}\n")
+                f.write(f"{'-'*70}\n")
+                f.flush()
+
         try:
-            res = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            if log_path:
+                with open(log_path, "a", encoding="utf-8") as f:
+                    res = subprocess.run(
+                        cmd,
+                        stdout=f,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        check=False,
+                    )
+            else:
+                res = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
         except Exception as e:
             raise EncodeError(f"Failed to spawn ffmpeg: {e}") from e
 
         elapsed = time.time() - start_time
+        end_ts = time.strftime("%Y-%m-%d %H:%M:%S")
+
+        if log_path:
+            with open(log_path, "a", encoding="utf-8") as f:
+                status_str = "SUCCESS" if res.returncode == 0 else f"FAILED (exit code {res.returncode})"
+                f.write(f"\n[{end_ts}] Status: {status_str} | Elapsed: {elapsed:.2f}s\n")
+                f.write(f"{'='*70}\n")
+                f.flush()
 
         if res.returncode != 0:
-            err_msg = res.stderr.strip() or res.stdout.strip()
-            raise EncodeError(f"FFmpeg encoding failed (exit code {res.returncode}): {err_msg}")
+            tail_lines = ""
+            if log_path and log_path.exists():
+                try:
+                    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                        tail_lines = "".join(f.readlines()[-20:]).strip()
+                except Exception:
+                    pass
+            err_msg = tail_lines or (res.stderr.strip() if hasattr(res, "stderr") and res.stderr else "Unknown error")
+            raise EncodeError(f"FFmpeg encoding failed (exit code {res.returncode}):\n{err_msg}")
 
         if not output_path.exists() or output_path.stat().st_size == 0:
             raise EncodeError("FFmpeg finished but output file is missing or empty")

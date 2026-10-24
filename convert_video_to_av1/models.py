@@ -48,6 +48,7 @@ class EncodeSettings:
     threads: int = 2
     faststart: bool = True
     delete_original: bool = False
+    log_file: Optional[str] = "video_conversion.log"
 
 
 @dataclass(frozen=True)

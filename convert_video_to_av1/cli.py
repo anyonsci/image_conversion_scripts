@@ -52,6 +52,10 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         help="Minimum percentage of space saved required for QA pass (default: 5.0, rejects conversion if savings < 5%% or size increases)",
     )
     parser.add_argument(
+        "--log-file", type=str, default="video_conversion.log",
+        help="Path to append video conversion and FFmpeg output logs (default: video_conversion.log in current directory)",
+    )
+    parser.add_argument(
         "--delete-original", action="store_true", default=False,
         help="Delete source video ONLY after successful conversion and QA verification",
     )
@@ -101,6 +105,7 @@ def main(args: list[str] | None = None) -> int:
         audio_bitrate=parsed.audio_bitrate,
         threads=parsed.threads,
         delete_original=parsed.delete_original,
+        log_file=parsed.log_file,
     )
 
     max_size_ratio = max(0.01, (100.0 - parsed.min_savings_pct) / 100.0)
