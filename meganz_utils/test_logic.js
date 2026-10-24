@@ -166,4 +166,34 @@ assert.ok(videoNames.includes('action.MOV'));
 assert.ok(!videoNames.includes('already_done.av1.mp4'));
 console.log('✔ Test 6 passed: Recursive MP4/MOV discovery and .av1.mp4 filtering');
 
+// Test 7: Persistent MEGA session caching & sanitization
+const fs = require('fs');
+const { getSessionPaths, loadCachedSession, saveCachedSession, clearCachedSession } = require('./lib/client');
+const testEmail = 'tester_sec_audit@example.com';
+const mockStorage = {
+  toJSON: () => ({
+    key: Buffer.alloc(16, 'k').toString('base64'),
+    sid: 'test_session_id_xyz789',
+    name: 'Security Test User',
+    user: 'u_tester_99',
+    options: { email: testEmail, password: 'supersecretpassword123', autoload: true }
+  })
+};
+
+// Save session
+saveCachedSession(testEmail, mockStorage);
+const { sessionPath } = getSessionPaths(testEmail);
+assert.ok(fs.existsSync(sessionPath), 'Session file must exist');
+
+// Verify permissions and contents
+const loaded = loadCachedSession(testEmail);
+assert.strictEqual(loaded.sid, 'test_session_id_xyz789');
+assert.strictEqual(loaded.name, 'Security Test User');
+assert.strictEqual(loaded.options.password, undefined, 'Raw password must be stripped from cached session');
+
+// Clear session
+clearCachedSession(testEmail);
+assert.ok(!fs.existsSync(sessionPath), 'Session file must be deleted upon clear');
+console.log('✔ Test 7 passed: Persistent MEGA session caching & password sanitization');
+
 console.log('\nAll unit tests passed successfully!');

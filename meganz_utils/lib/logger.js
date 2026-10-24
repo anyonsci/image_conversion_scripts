@@ -6,6 +6,9 @@
 'use strict';
 
 const logger = {
+  debug: (msg) => {
+    if (process.env.DEBUG) console.log(`[${new Date().toISOString()}] [DEBUG] ${msg}`);
+  },
   info: (msg) => console.log(`[${new Date().toISOString()}] [INFO] ${msg}`),
   warn: (msg) => console.warn(`[${new Date().toISOString()}] [WARN] ${msg}`),
   success: (msg) => console.log(`[${new Date().toISOString()}] [SUCCESS] ${msg}`),

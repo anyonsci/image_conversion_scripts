@@ -11,6 +11,7 @@ const path = require('path');
 const os = require('os');
 const http = require('http');
 const https = require('https');
+const crypto = require('crypto');
 const { URL } = require('url');
 const { execSync } = require('child_process');
 const { Storage } = require('megajs');
@@ -122,12 +123,100 @@ function resolveCredentials(options = {}) {
 }
 
 /**
+ * Computes cache path for a persistent MEGA session based on email.
+ * @param {string} email
+ * @returns {{ cacheDir: string, sessionPath: string }}
+ */
+function getSessionPaths(email) {
+  const hash = crypto.createHash('sha256').update(email.toLowerCase().trim()).digest('hex').slice(0, 16);
+  const cacheDir = path.join(os.homedir(), '.cache', 'meganz_utils');
+  const sessionPath = path.join(cacheDir, `session_${hash}.json`);
+  return { cacheDir, sessionPath };
+}
+
+/**
+ * Loads a cached session from disk if present.
+ * @param {string} email
+ * @returns {object | null}
+ */
+function loadCachedSession(email) {
+  try {
+    const { sessionPath } = getSessionPaths(email);
+    if (!fs.existsSync(sessionPath)) return null;
+    const content = fs.readFileSync(sessionPath, 'utf8');
+    const parsed = JSON.parse(content);
+    if (parsed && parsed.sid && parsed.key) {
+      return parsed;
+    }
+  } catch (err) {
+    logger.debug(`Could not read session cache: ${err.message}`);
+  }
+  return null;
+}
+
+/**
+ * Persists an authenticated session to disk with 0600 permissions.
+ * @param {string} email
+ * @param {import('megajs').Storage} storage
+ */
+function saveCachedSession(email, storage) {
+  try {
+    const { cacheDir, sessionPath } = getSessionPaths(email);
+    if (!fs.existsSync(cacheDir)) {
+      fs.mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
+    }
+    const sessionData = storage.toJSON();
+    // Do not persist raw password in the session cache file
+    if (sessionData && sessionData.options) {
+      delete sessionData.options.password;
+    }
+    fs.writeFileSync(sessionPath, JSON.stringify(sessionData, null, 2), { mode: 0o600 });
+    logger.debug(`Saved persistent session cache to ${sessionPath}`);
+  } catch (err) {
+    logger.warn(`Failed to persist MEGA session cache: ${err.message}`);
+  }
+}
+
+/**
+ * Removes cached session from disk.
+ * @param {string} email
+ */
+function clearCachedSession(email) {
+  try {
+    const { sessionPath } = getSessionPaths(email);
+    if (fs.existsSync(sessionPath)) {
+      fs.unlinkSync(sessionPath);
+      logger.debug(`Cleared session cache at ${sessionPath}`);
+    }
+  } catch (_) {}
+}
+
+/**
  * Connects to MEGA and returns the authenticated Storage instance.
+ * Reuses persistent sessions to prevent triggering datacenter login alerts.
  * @param {object} credentials - { email, password }
  * @returns {Promise<import('megajs').Storage>}
  */
 async function connectMega(credentials) {
-  logger.info(`Connecting to MEGA as ${credentials.email}...`);
+  const cachedSession = loadCachedSession(credentials.email);
+  if (cachedSession) {
+    try {
+      logger.info(`Resuming persistent MEGA session for ${credentials.email}...`);
+      const storage = Storage.fromJSON(cachedSession);
+      storage.status = 'ready';
+      if (storage.api) {
+        storage.api.fetch = customFetch;
+      }
+      await storage.reload(true);
+      logger.success(`Resumed MEGA session successfully! Account: ${storage.name || credentials.email}`);
+      return storage;
+    } catch (err) {
+      logger.warn(`Cached session invalid or expired (${err.message}). Performing fresh login...`);
+      clearCachedSession(credentials.email);
+    }
+  }
+
+  logger.info(`Connecting to MEGA as ${credentials.email} (fresh login)...`);
   const storage = await new Storage({
     email: credentials.email,
     password: credentials.password,
@@ -140,6 +229,7 @@ async function connectMega(credentials) {
     storage.api.fetch = customFetch;
   }
 
+  saveCachedSession(credentials.email, storage);
   logger.success(`Connected to MEGA successfully! Account: ${storage.name || credentials.email}`);
   return storage;
 }
@@ -176,4 +266,8 @@ module.exports = {
   connectMega,
   fetchRawNodes,
   closeMega,
+  getSessionPaths,
+  loadCachedSession,
+  saveCachedSession,
+  clearCachedSession,
 };
