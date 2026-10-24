@@ -123,6 +123,38 @@ install_conversion_engine() {
   "$install_script" "${extra_flags[@]}"
 }
 
+rclone_has_mega() {
+  command -v rclone >/dev/null 2>&1 || return 1
+  rclone help backends 2>/dev/null | grep -E '^[[:space:]]*mega[[:space:]]' >/dev/null
+}
+
+install_rclone() {
+  if rclone_has_mega; then
+    ok "rclone $(rclone version | sed -n '1p') includes the MEGA backend."
+    return 0
+  fi
+
+  log "Installing the official rclone release with MEGA backend support..."
+  need_cmd curl
+  if ! command -v unzip >/dev/null 2>&1; then
+    run_apt unzip
+  fi
+
+  local install_status=0
+  if [[ "$(id -u)" -eq 0 ]]; then
+    curl -fsSL https://rclone.org/install.sh | bash - || install_status=$?
+  else
+    need_cmd sudo
+    curl -fsSL https://rclone.org/install.sh | sudo bash - || install_status=$?
+  fi
+
+  if [[ "$install_status" -ne 0 && "$install_status" -ne 3 ]]; then
+    die "Official rclone installer failed with exit code ${install_status}."
+  fi
+  rclone_has_mega || die "Installed rclone does not include the MEGA backend."
+  ok "rclone $(rclone version | sed -n '1p') includes the MEGA backend."
+}
+
 setup_meganz_utils() {
   log "Setting up meganz_utils Node.js environment..."
   local meganz_dir="${SCRIPT_DIR}/meganz_utils"
@@ -192,6 +224,7 @@ Installed Tools:
   ✔ heif-convert + libde265 / x265 (Apple/Android HEIC decode & encode)
   ✔ avifenc / avifdec / avifgainmaputil (AV1 + gain maps)
   ✔ Node.js $(node -v) + meganz_utils suite
+  ✔ rclone with MEGA backend
 
 How to run conversions:
   1. Dry-run test from root:
@@ -212,6 +245,7 @@ main() {
   detect_os
   ensure_nodejs
   install_conversion_engine
+  install_rclone
   setup_meganz_utils
   check_credentials
   print_summary

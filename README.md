@@ -19,8 +19,8 @@ cd image_conversion_scripts
 The script automatically:
 1. Installs Python 3 (`Pillow`, `NumPy`), `ffmpeg`, `exiftool`, and `libheif` (`heif-convert` with `libde265` & `x265`).
 2. Builds / verifies `avifenc`, `avifdec`, and `avifgainmaputil` (with SVT-AV1 & gain-map support).
-3. Ensures Node.js (>= 18) and runs `npm install` for `meganz_utils`.
-4. Runs unit tests and self-checks.
+3. Installs the official rclone release and verifies that its MEGA backend is available.
+4. Ensures Node.js (>= 18), installs `meganz_utils` dependencies, and runs unit tests.
 
 ---
 
@@ -41,10 +41,11 @@ MEGA_PASSWORD=your_password
 ```
 
 ### Option B: `rclone` config
-If you already use `rclone` with a remote named `mega1`:
+To create the remote expected by `meganz_utils` (named `mega1`):
 ```bash
-# meganz_utils automatically reads ~/.config/rclone/rclone.conf
 rclone config
+# Choose "n" for a new remote, name it "mega1", then select the "mega" storage type.
+# Enter your MEGA credentials and save the remote.
 ```
 
 ### Option C: CLI Arguments

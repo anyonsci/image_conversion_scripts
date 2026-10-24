@@ -144,6 +144,7 @@ install_apt_packages() {
     pkg-config
     libsvtav1enc-dev
     libdav1d-dev
+    libyuv-dev
     libjpeg-dev
     libpng-dev
     zlib1g-dev
