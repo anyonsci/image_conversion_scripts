@@ -95,7 +95,8 @@ Video Convert Options:
   -t, --threads <num>       Encoding threads (default: 2)
   --audio-codec <codec>     Audio codec: 'auto', 'copy', 'aac', or 'opus' (default: 'auto')
   --audio-bitrate <rate>    Audio bitrate for re-encoded audio (default: '192k')
-  --keep-av1-suffix         Keep .av1.mp4 suffix instead of renaming to .mp4
+  --adaptive-quality        Dynamically tune CRF based on resolution, bitrate, and bit-depth (default: true)
+  --no-adaptive-quality     Disable adaptive quality and use fixed -crf for all videos
 
 Examples:
   # Upload thumbnails for local AVIF files in remote folder "mummy_parna_26":

@@ -91,7 +91,7 @@ class TestVideoConverter(unittest.TestCase):
         qa_settings = QaSettings(verify=True)
         converter = VideoConverter(self.tools, encode_settings, qa_settings)
 
-        out_path = self.work_dir / "sample_mov.mp4"
+        out_path = self.work_dir / "sample_mov.av1.mp4"
         res = converter.convert_file(self.mov_src, out_path)
 
         self.assertEqual(res.status, ConvertStatus.CONVERTED)
@@ -103,6 +103,11 @@ class TestVideoConverter(unittest.TestCase):
         out_info = prober.probe(out_path)
         self.assertTrue(out_info.is_av1)
         self.assertEqual(out_info.audio_codec, "aac")
+
+        # Verify attempting to convert an already .av1.mp4 file skips immediately
+        skip_res = converter.convert_file(out_path, self.work_dir / "another.av1.mp4")
+        self.assertEqual(skip_res.status, ConvertStatus.SKIPPED)
+        self.assertIn(".av1.mp4", skip_res.error_message)
 
     def test_adaptive_crf(self):
         from convert_video_to_av1.encoding import compute_adaptive_video_crf

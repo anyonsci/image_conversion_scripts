@@ -120,12 +120,10 @@ def main(args: list[str] | None = None) -> int:
             out_path = parsed.output.resolve()
             if out_path.is_dir() or (not out_path.suffix and not out_path.exists()):
                 stem = input_path.stem
-                ext = ".av1.mp4" if input_path.suffix.lower() == ".mp4" else ".mp4"
-                out_path = out_path / f"{stem}{ext}"
+                out_path = out_path / f"{stem}.av1.mp4"
         else:
             stem = input_path.stem
-            ext = ".av1.mp4" if input_path.suffix.lower() == ".mp4" else ".mp4"
-            out_path = input_path.parent / f"{stem}{ext}"
+            out_path = input_path.parent / f"{stem}.av1.mp4"
 
         print(f"Converting: {input_path.name} -> {out_path.name}")
         res = converter.convert_file(input_path, out_path)
@@ -134,13 +132,12 @@ def main(args: list[str] | None = None) -> int:
         # Directory recursive conversion
         out_root = parsed.output.resolve() if parsed.output else input_path
         video_files = list(InputScanner.iter_videos(input_path))
-        print(f"Found {len(video_files)} video file(s) in '{input_path}'")
+        print(f"Found {len(video_files)} candidate video file(s) in '{input_path}' (excluding .av1.mp4)")
 
         for idx, src in enumerate(video_files, 1):
             rel = src.relative_to(input_path)
             stem = rel.stem
-            ext = ".av1.mp4" if src.suffix.lower() == ".mp4" else ".mp4"
-            out_file = out_root / rel.parent / f"{stem}{ext}"
+            out_file = out_root / rel.parent / f"{stem}.av1.mp4"
 
             print(f"[{idx}/{len(video_files)}] Processing: {rel}...")
             res = converter.convert_file(src, out_file)

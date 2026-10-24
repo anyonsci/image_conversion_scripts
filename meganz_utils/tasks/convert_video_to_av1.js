@@ -253,37 +253,84 @@ async function generateVideoPosters(videoPath, thumbPath, prevPath) {
 }
 
 /**
+ * Fast zero-bandwidth inspection to check if a remote video is already AV1 encoded
+ * using a small ~64KB ranged read, avoiding full video download.
+ *
+ * @param {import('megajs').MutableFile} file
+ * @returns {Promise<boolean>}
+ */
+async function isRemoteVideoAv1(file) {
+  if (!file || file.size < 1000) return false;
+  try {
+    // 1. Check first 64KB (faststart AV1 videos have moov -> stsd -> av01 at the head)
+    const headSize = Math.min(65536, file.size);
+    const headBuf = await file.downloadBuffer({ start: 0, end: headSize - 1 });
+    if (headBuf && headBuf.includes(Buffer.from('av01'))) {
+      return true;
+    }
+
+    // 2. Check last 64KB (non-faststart AV1 videos write moov at the tail)
+    if (file.size > 131072) {
+      const tailBuf = await file.downloadBuffer({ start: file.size - 65536, end: file.size - 1 });
+      if (tailBuf && tailBuf.includes(Buffer.from('av01'))) {
+        return true;
+      }
+    }
+  } catch (_) {}
+  return false;
+}
+
+/**
  * Processes a single remote video file.
  */
 async function processVideo(item, config) {
   const { file, parentFolder, relativePath, name: fileName } = item;
-  const isMov = /\.mov$/i.test(fileName);
-  const isMp4 = /\.mp4$/i.test(fileName);
 
-  // Target filename logic:
-  // - For .mov: target is <stem>.mp4
-  // - For .mp4: upload as <stem>.av1.mp4 temporarily to avoid remote collision, then rename to <stem>.mp4 upon deletion of original
+  // Target filename: ALWAYS <stem>.av1.mp4
   const stem = fileName.replace(/\.(mp4|mov|m4v)$/i, '');
-  const targetFinalName = `${stem}.mp4`;
-  const uploadName = isMp4 ? `${stem}.av1.mp4` : targetFinalName;
+  const targetAv1Name = `${stem}.av1.mp4`;
+
+  // Quick skip if the file itself already has the .av1.mp4 suffix
+  if (fileName.toLowerCase().endsWith('.av1.mp4')) {
+    logger.info(`Video "${fileName}" already has .av1.mp4 suffix. Skipping.`);
+    return {
+      status: 'skipped_existing',
+      fileName,
+      targetAv1Name: fileName,
+      originalSize: file.size,
+      convertedSize: file.size,
+    };
+  }
 
   // Check if an AV1 version already exists in parent folder
-  const existingFinal = parentFolder.children
-    ? parentFolder.children.find((c) => !c.directory && c.name.toLowerCase() === targetFinalName.toLowerCase() && c.id !== file.id)
+  const existingAv1 = parentFolder.children
+    ? parentFolder.children.find((c) => !c.directory && c.name.toLowerCase() === targetAv1Name.toLowerCase() && c.id !== file.id)
     : null;
 
-  if (existingFinal && existingFinal.size > 1000 && !config.force) {
+  if (existingAv1 && existingAv1.size > 1000 && !config.force) {
     logger.info(
-      `AV1 video "${targetFinalName}" already exists in parent folder (${formatBytes(existingFinal.size)}). Cleaning up original "${fileName}"...`
+      `AV1 video "${targetAv1Name}" already exists in parent folder (${formatBytes(existingAv1.size)}). Cleaning up original "${fileName}"...`
     );
     await file.delete();
     logger.success(`Removed original "${fileName}" from MEGA.`);
     return {
       status: 'skipped_existing',
       fileName,
-      targetFinalName,
+      targetAv1Name,
       originalSize: file.size,
-      convertedSize: existingFinal.size,
+      convertedSize: existingAv1.size,
+    };
+  }
+
+  // Fast zero-bandwidth ranged check: verify if remote file is already AV1 before downloading
+  if (!config.force && (await isRemoteVideoAv1(file))) {
+    logger.info(`Remote video "${fileName}" is already AV1 encoded (detected via ranged atom inspection). Skipping download.`);
+    return {
+      status: 'skipped_existing',
+      fileName,
+      targetAv1Name,
+      originalSize: file.size,
+      convertedSize: file.size,
     };
   }
 
@@ -353,37 +400,26 @@ async function processVideo(item, config) {
     // Step 3: Generate thumbnail and preview poster frames
     const { thumbBuf, prevBuf } = await generateVideoPosters(tempAv1Path, tempThumbPath, tempPrevPath);
 
-    // Step 4: Stream AV1 video back to MEGA
-    logger.info(`Uploading "${uploadName}" to parent folder "${parentFolder.name}"...`);
+    // Step 4: Stream AV1 video back to MEGA directly as <stem>.av1.mp4
+    logger.info(`Uploading "${targetAv1Name}" to parent folder "${parentFolder.name}"...`);
     const uploadedFile = await uploadVideoStreamWithRetry(
       parentFolder,
-      uploadName,
+      targetAv1Name,
       tempAv1Path,
       thumbBuf,
       prevBuf
     );
-    logger.success(`Upload complete for "${uploadName}".`);
+    logger.success(`Upload complete for "${targetAv1Name}".`);
 
     // Step 5: Delete original remote file
     logger.info(`Deleting original video "${fileName}" from MEGA...`);
     await file.delete();
     logger.success(`Removed original video "${fileName}" from MEGA.`);
 
-    // Step 6: If uploaded with temporary .av1.mp4 name, rename to .mp4
-    if (uploadName !== targetFinalName && !config.keepAv1Suffix) {
-      logger.info(`Renaming "${uploadName}" to "${targetFinalName}" on MEGA...`);
-      try {
-        await uploadedFile.rename(targetFinalName);
-        logger.success(`Renamed to "${targetFinalName}".`);
-      } catch (renameErr) {
-        logger.warn(`Could not rename "${uploadName}" to "${targetFinalName}": ${renameErr.message}`);
-      }
-    }
-
     return {
       status: 'success',
       fileName,
-      targetFinalName,
+      targetAv1Name,
       originalSize: downloadedSize,
       convertedSize,
     };
@@ -405,10 +441,18 @@ async function runSinglePass(storage, targetFolder, config) {
   const extensions = config.ext || ['mp4', 'mov', 'm4v'];
   logger.info(`Scanning target folder "${targetFolder.name}" for videos: [${extensions.join(', ')}]...`);
 
-  const files = scanFiles(targetFolder, {
+  const allFiles = scanFiles(targetFolder, {
     extensions,
     recursive: config.recursive !== false,
   });
+
+  // Filter out any video that already has the .av1.mp4 suffix (zero bandwidth skip)
+  const files = config.force ? allFiles : allFiles.filter((item) => !item.name.toLowerCase().endsWith('.av1.mp4'));
+  const alreadyAv1Count = allFiles.length - files.length;
+
+  if (alreadyAv1Count > 0) {
+    logger.info(`Ignored ${alreadyAv1Count} already-converted video(s) (.av1.mp4).`);
+  }
 
   logger.info(`Found ${files.length} candidate video file(s) in target directory.`);
 

@@ -58,6 +58,7 @@ image_conversion_scripts/
    - Videos (100MB – 2GB+) must never be downloaded into in-memory buffers (`downloadBuffer()`).
    - Always stream to/from local disk (`file.download().pipe(...)` and `fs.createReadStream().pipe(folder.upload())`) to protect instances from OOM crashes.
 4. **Zero-Bandwidth Operations First**:
+   - **Video AV1 Detection**: All converted videos strictly use the `<stem>.av1.mp4` suffix. The scanner immediately excludes `*.av1.mp4` by filename regex (0 bytes) and verifies whether `<stem>.av1.mp4` already exists on MEGA before downloading any source video.
    - **Day-wise Organizing**: Never download full photos to move them. Extract dates via filename regex (0 bytes) or header range reads (~128 KB for EXIF, ~1 KB for QuickTime atoms). Move files using MEGA's server-side `moveTo()` API.
    - **Thumbnails**: Point to local directories (`--local-dir`) whenever files exist locally to prevent redundant downloads.
 

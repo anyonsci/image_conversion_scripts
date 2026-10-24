@@ -30,7 +30,9 @@ class InputScanner:
             return
         for path in sorted(root.rglob("*")):
             if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS:
-                yield path
+                # Quickly skip already-converted AV1 videos by filename suffix
+                if not path.name.lower().endswith(".av1.mp4"):
+                    yield path
 
 
 class VideoConverter:
@@ -62,6 +64,18 @@ class VideoConverter:
                 source=str(source),
                 output=None,
                 error_message="Source file does not exist",
+            )
+
+        # Quick check by filename suffix: skip already-converted AV1 videos immediately
+        if source.name.lower().endswith(".av1.mp4") and not self._force:
+            size = source.stat().st_size if source.exists() else 0
+            return ConvertResult(
+                status=ConvertStatus.SKIPPED,
+                source=str(source),
+                output=str(output),
+                original_size=size,
+                converted_size=size,
+                error_message="Video file already has .av1.mp4 suffix",
             )
 
         # 1. Probe source

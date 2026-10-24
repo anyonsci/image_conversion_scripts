@@ -90,6 +90,7 @@ const mockRoot = {
             { name: 'logo.png', directory: false, size: 512 },
             { name: 'clip.mp4', directory: false, size: 1048576 },
             { name: 'action.MOV', directory: false, size: 2097152 },
+            { name: 'already_done.av1.mp4', directory: false, size: 524288 },
             {
               name: 'Trip',
               directory: true,
@@ -154,12 +155,15 @@ assert.strictEqual(foundFromPhotos.find(f => f.fileName === 'mountain.jpeg').rel
 assert.strictEqual(foundFromPhotos.find(f => f.fileName === 'mountain.jpeg').parentFolder.name, 'Trip');
 console.log('✔ Test 5 passed: Relative paths and parent folder linking');
 
-// Test 6: Recursive video discovery (MP4 / MOV case-insensitive)
+// Test 6: Recursive video discovery and .av1.mp4 filtering
 const foundVideos = scanFiles(photos, { extensions: ['mp4', 'mov', 'm4v'] });
-assert.strictEqual(foundVideos.length, 2);
-const videoNames = foundVideos.map((v) => v.name);
+assert.strictEqual(foundVideos.length, 3);
+const candidateVideos = foundVideos.filter((v) => !v.name.toLowerCase().endsWith('.av1.mp4'));
+assert.strictEqual(candidateVideos.length, 2);
+const videoNames = candidateVideos.map((v) => v.name);
 assert.ok(videoNames.includes('clip.mp4'));
 assert.ok(videoNames.includes('action.MOV'));
-console.log('✔ Test 6 passed: Recursive MP4/MOV discovery (case-insensitive)');
+assert.ok(!videoNames.includes('already_done.av1.mp4'));
+console.log('✔ Test 6 passed: Recursive MP4/MOV discovery and .av1.mp4 filtering');
 
 console.log('\nAll unit tests passed successfully!');
