@@ -196,4 +196,103 @@ clearCachedSession(testEmail);
 assert.ok(!fs.existsSync(sessionPath), 'Session file must be deleted upon clear');
 console.log('✔ Test 7 passed: Persistent MEGA session caching & password sanitization');
 
+// Test 8: CSV Manifest serialization, RFC-4180 escaping, and loading
+const os = require('os');
+const {
+  loadManifest,
+  appendManifestEntry,
+  saveManifest,
+  updateManifestUploadStatus,
+  escapeCsv,
+  parseCsvLine,
+} = require('./lib/manifest');
+const { resolveOfflineDirs } = require('./tasks/offline_video');
+
+const tempTestDir = path.join(os.tmpdir(), `test_manifest_${Date.now()}`);
+const tempManifest = path.join(tempTestDir, 'manifest.csv');
+
+// Test CSV escaping
+assert.strictEqual(escapeCsv('normal'), 'normal');
+assert.strictEqual(escapeCsv('has,comma'), '"has,comma"');
+assert.strictEqual(escapeCsv('has"quote'), '"has""quote"');
+assert.strictEqual(escapeCsv('has\nnewline'), '"has\nnewline"');
+
+// Test CSV line parsing
+const parsed = parseCsvLine('folder/clip.mp4,converted,1000,500,50.0,12.5,30,8,"2026-10-25T00:00:00Z",false,"No errors, clean"');
+assert.strictEqual(parsed[0], 'folder/clip.mp4');
+assert.strictEqual(parsed[1], 'converted');
+assert.strictEqual(parsed[parsed.length - 1], 'No errors, clean');
+
+// Append entries to manifest
+appendManifestEntry(tempManifest, {
+  relativePath: 'Day 1/clip1.MOV',
+  status: 'converted',
+  originalSize: 50000000,
+  convertedSize: 25000000,
+  savingsPct: 50.0,
+  durationSec: 15.2,
+  crf: 30,
+  preset: 8,
+  timestamp: '2026-10-25T01:00:00Z',
+  uploaded: false,
+  errorMessage: '',
+});
+
+appendManifestEntry(tempManifest, {
+  relativePath: 'Day 2/burst_action.mp4',
+  status: 'rejected_no_savings',
+  originalSize: 10000000,
+  convertedSize: 0,
+  savingsPct: 0.0,
+  durationSec: 3.1,
+  crf: 32,
+  preset: 8,
+  timestamp: '2026-10-25T01:05:00Z',
+  uploaded: false,
+  errorMessage: 'Insufficient compression: AV1 larger than source',
+});
+
+const loadedMap = loadManifest(tempManifest);
+assert.strictEqual(loadedMap.size, 2);
+assert.strictEqual(loadedMap.get('Day 1/clip1.MOV').status, 'converted');
+assert.strictEqual(loadedMap.get('Day 1/clip1.MOV').originalSize, 50000000);
+assert.strictEqual(loadedMap.get('Day 1/clip1.MOV').convertedSize, 25000000);
+assert.strictEqual(loadedMap.get('Day 1/clip1.MOV').savingsPct, 50.0);
+assert.strictEqual(loadedMap.get('Day 1/clip1.MOV').uploaded, false);
+assert.strictEqual(loadedMap.get('Day 2/burst_action.mp4').status, 'rejected_no_savings');
+console.log('✔ Test 8 passed: CSV Manifest serialization, RFC-4180 escaping, and loading');
+
+// Test 9: Manifest resume skipping & manual deletion re-run behavior
+// 1. Resume check: both existing entries should be recognized as processed
+assert.ok(loadedMap.has('Day 1/clip1.MOV'));
+assert.ok(loadedMap.has('Day 2/burst_action.mp4'));
+
+// 2. User manually deletes 'Day 2/burst_action.mp4' from CSV to re-run it
+loadedMap.delete('Day 2/burst_action.mp4');
+saveManifest(tempManifest, loadedMap);
+
+const reloadedMap = loadManifest(tempManifest);
+assert.strictEqual(reloadedMap.size, 1);
+assert.ok(reloadedMap.has('Day 1/clip1.MOV'), 'Day 1/clip1.MOV should remain');
+assert.ok(!reloadedMap.has('Day 2/burst_action.mp4'), 'Day 2/burst_action.mp4 should be absent after manual deletion for re-run');
+console.log('✔ Test 9 passed: Manifest resume skipping & manual deletion re-run behavior');
+
+// Test 10: Manifest upload status updating
+updateManifestUploadStatus(tempManifest, 'Day 1/clip1.MOV', true);
+const afterUploadMap = loadManifest(tempManifest);
+assert.strictEqual(afterUploadMap.get('Day 1/clip1.MOV').uploaded, true);
+console.log('✔ Test 10 passed: Manifest upload status tracking');
+
+// Test 11: Offline workspace directory structure & path conservation
+const dirs = resolveOfflineDirs({ offlineDir: tempTestDir }, 'kashmir');
+assert.strictEqual(dirs.inputDir, path.join(tempTestDir, 'input'));
+assert.strictEqual(dirs.outputDir, path.join(tempTestDir, 'output'));
+assert.strictEqual(dirs.manifestPath, path.join(tempTestDir, 'manifest.csv'));
+assert.ok(fs.existsSync(dirs.inputDir));
+assert.ok(fs.existsSync(dirs.outputDir));
+
+// Clean up temp test directory
+fs.rmSync(tempTestDir, { recursive: true, force: true });
+console.log('✔ Test 11 passed: Offline workspace directory structure & path conservation');
+
 console.log('\nAll unit tests passed successfully!');

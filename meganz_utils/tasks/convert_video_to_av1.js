@@ -263,6 +263,23 @@ function appendToLogFile(logPath, message) {
 }
 
 /**
+ * Safely deletes an original video from MEGA after conversion and upload verification.
+ *
+ * @param {import('megajs').MutableFile} file
+ * @returns {Promise<boolean>}
+ */
+async function deleteOriginalVideo(file) {
+  try {
+    await file.delete();
+    logger.success(`Removed original video "${file.name}" from MEGA.`);
+    return true;
+  } catch (err) {
+    logger.warn(`Could not delete original video "${file.name}": ${err.message}`);
+    return false;
+  }
+}
+
+/**
  * Fast zero-bandwidth inspection to check if a remote video is already AV1 encoded
  * using a small ~64KB ranged read, avoiding full video download.
  *
@@ -704,4 +721,11 @@ async function runConvertVideoTask(storage, targetFolder, options = {}) {
 module.exports = {
   runConvertVideoTask,
   processVideo,
+  downloadVideoWithRetry,
+  uploadVideoStreamWithRetry,
+  generateVideoPosters,
+  deleteOriginalVideo,
+  detectVideoConvertScriptPath,
+  resolveHomePath,
+  appendToLogFile,
 };

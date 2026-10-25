@@ -36,6 +36,7 @@ const { resolveFolderPath, parseExtensionFilter } = require('./lib/scanner');
 const { runThumbnailsTask } = require('./tasks/upload_thumbnails');
 const { runConvertTask } = require('./tasks/convert_to_avif');
 const { runConvertVideoTask } = require('./tasks/convert_video_to_av1');
+const { runOfflineVideoTask } = require('./tasks/offline_video');
 const { runOrganizeTask } = require('./tasks/organize_daywise');
 
 // ====================================================================
@@ -56,6 +57,7 @@ Commands:
                        using avifdec + ffmpeg. Reads from local directory to prevent re-downloads.
   convert, avif        Recursively convert remote JPEGs to AVIF, attaching thumbnails, and removing originals.
   convert-video, video Recursively convert remote MP4/MOV videos to AV1, attaching thumbnails/previews, and removing originals.
+  offline, offline-vid 3-phase offline video conversion: batch download, local convert, batch upload.
   organize, org        Organize photos and videos into day-wise folders (Day 1 - Day 7) based on capture dates.
   help                 Display this help message
 
@@ -100,6 +102,13 @@ Video Convert Options:
   --skip-low-bitrate        Skip pre-compressed videos (e.g. WhatsApp / web clips < 1.2 Mbps) (default: true)
   --no-skip-low-bitrate     Force transcoding even on already highly compressed videos
 
+Offline Video Options:
+  --offline                 Run video conversion in 3-phase offline mode (download all, convert, upload all)
+  --offline-dir <path>      Local directory for offline staging (default: ~/ws/mega_offline_<name>)
+  --download-only           Phase 1 only: batch download candidate videos to local disk
+  --convert-only            Phase 2 only: batch convert local input videos (zero MEGA connection needed)
+  --upload-only             Phase 3 only: batch upload converted videos to MEGA and delete originals
+
 Examples:
   # Upload thumbnails for local AVIF files in remote folder "mummy_parna_26":
   node index.js thumbnails --path="mummy_parna_26" --local-dir="/home/ubuntu/ws/parna_avif"
@@ -113,8 +122,20 @@ Examples:
   # Convert remote JPEGs on hourly schedule:
   node index.js convert --path="/" --cron
 
-  # Convert remote MP4/MOV videos in folder to AV1:
+  # Convert remote MP4/MOV videos in folder to AV1 (streaming mode):
   node index.js convert-video --path="kashmir" -crf 28 --preset 6
+
+  # Full 3-phase offline video conversion with persistent CSV manifest:
+  node index.js convert-video --path="kashmir" --offline
+
+  # Batch download only:
+  node index.js convert-video --path="kashmir" --download-only
+
+  # Convert offline locally (requires NO network connection or MEGA credentials):
+  node index.js convert-video --convert-only --offline-dir="~/ws/mega_offline_kashmir"
+
+  # Batch upload only:
+  node index.js convert-video --path="kashmir" --upload-only
 `);
 }
 
@@ -154,6 +175,11 @@ function parseCLI() {
     audioBitrate: process.env.AUDIO_BITRATE || '192k',
     logFile: process.env.VIDEO_LOG_FILE || null,
     keepAv1Suffix: false,
+    offline: false,
+    offlineDir: process.env.OFFLINE_DIR || null,
+    downloadOnly: false,
+    convertOnly: false,
+    uploadOnly: false,
     force: false,
     dryRun: false,
     limit: 0,
@@ -268,6 +294,21 @@ function parseCLI() {
       options.logFile = arg.split('=')[1];
     } else if (arg === '--keep-av1-suffix') {
       options.keepAv1Suffix = true;
+    } else if (arg === '--offline') {
+      options.offline = true;
+    } else if (arg === '--offline-dir') {
+      options.offlineDir = args[++i];
+    } else if (arg.startsWith('--offline-dir=')) {
+      options.offlineDir = arg.split('=')[1];
+    } else if (arg === '--download-only') {
+      options.downloadOnly = true;
+      options.offline = true;
+    } else if (arg === '--convert-only') {
+      options.convertOnly = true;
+      options.offline = true;
+    } else if (arg === '--upload-only') {
+      options.uploadOnly = true;
+      options.offline = true;
     }
   }
 
@@ -290,11 +331,16 @@ async function main() {
     'thumbnails', 'thumb',
     'convert', 'avif',
     'convert-video', 'convert-videos', 'video', 'video-av1',
+    'offline', 'offline-video', 'offline-vid',
     'organize', 'org', 'daywise',
   ];
   if (!validCommands.includes(cli.command)) {
     console.error(`Error: Unknown command "${cli.command}". Run "node index.js help" for usage.`);
     process.exit(1);
+  }
+
+  if (cli.command === 'offline' || cli.command === 'offline-video' || cli.command === 'offline-vid') {
+    cli.offline = true;
   }
 
   // Set default extension filters per command if not explicitly overridden
@@ -303,9 +349,23 @@ async function main() {
       cli.ext = ['avif', 'jpg', 'jpeg', 'png', 'webp'];
     } else if (cli.command === 'convert' || cli.command === 'avif') {
       cli.ext = ['jpg', 'jpeg', 'heic', 'heif'];
-    } else if (cli.command === 'convert-video' || cli.command === 'convert-videos' || cli.command === 'video' || cli.command === 'video-av1') {
+    } else if (
+      cli.command === 'convert-video' ||
+      cli.command === 'convert-videos' ||
+      cli.command === 'video' ||
+      cli.command === 'video-av1' ||
+      cli.command === 'offline' ||
+      cli.command === 'offline-video' ||
+      cli.command === 'offline-vid'
+    ) {
       cli.ext = ['mp4', 'mov', 'm4v'];
     }
+  }
+
+  // If convert-only is requested, execute completely offline without network or MEGA credentials
+  if (cli.convertOnly) {
+    await runOfflineVideoTask(null, null, cli);
+    return;
   }
 
   // 1. Resolve authentication credentials
@@ -338,8 +398,20 @@ async function main() {
       await runThumbnailsTask(storage, targetFolder, cli, rawNodes);
     } else if (cli.command === 'convert' || cli.command === 'avif') {
       await runConvertTask(storage, targetFolder, cli);
-    } else if (cli.command === 'convert-video' || cli.command === 'convert-videos' || cli.command === 'video' || cli.command === 'video-av1') {
-      await runConvertVideoTask(storage, targetFolder, cli);
+    } else if (
+      cli.command === 'convert-video' ||
+      cli.command === 'convert-videos' ||
+      cli.command === 'video' ||
+      cli.command === 'video-av1' ||
+      cli.command === 'offline' ||
+      cli.command === 'offline-video' ||
+      cli.command === 'offline-vid'
+    ) {
+      if (cli.offline) {
+        await runOfflineVideoTask(storage, targetFolder, cli);
+      } else {
+        await runConvertVideoTask(storage, targetFolder, cli);
+      }
     }
   } finally {
     closeMega(storage);
