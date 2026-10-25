@@ -56,6 +56,17 @@ function resolveOfflineDirs(options, targetFolderName = 'video') {
   let offlineDir;
   if (options.offlineDir) {
     offlineDir = resolveHomePath(options.offlineDir);
+    // If user passed the 'output' subdirectory (e.g. ~/ws/mega_offline_kashmir/output),
+    // normalize to the parent offline workspace directory
+    if (path.basename(offlineDir) === 'output') {
+      const parentDir = path.dirname(offlineDir);
+      if (
+        fs.existsSync(path.join(parentDir, 'input')) ||
+        fs.existsSync(path.join(parentDir, 'manifest.csv'))
+      ) {
+        offlineDir = parentDir;
+      }
+    }
   } else {
     const safeName = targetFolderName ? targetFolderName.replace(/[^a-zA-Z0-9_-]/g, '_') : 'video';
     offlineDir = path.join(os.homedir(), 'ws', `mega_offline_${safeName}`);
@@ -549,7 +560,7 @@ async function runOfflineVideoTask(storage, targetFolder, options = {}) {
     logFilePath: resolveHomePath(options.logFile || path.join(offlineDirs.offlineDir, 'video_conversion.log')),
     crf: options.crf || 30,
     preset: options.preset || 8,
-    threads: options.threads || 2,
+    threads: options.threads !== undefined ? options.threads : 2,
     audioCodec: options.audioCodec || 'auto',
     audioBitrate: options.audioBitrate || '192k',
     minSavingsPct: options.minSavingsPct != null ? parseFloat(options.minSavingsPct) : 5.0,

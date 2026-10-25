@@ -130,9 +130,13 @@ class VideoEncoder:
             "-crf", str(target_crf),
         ]
 
-        # Configure SVT-AV1 params (RAM-safe threads / level of parallelism)
-        threads = max(1, self._settings.threads)
-        base_params = f"{self._settings.svt_params}:lp={threads}"
+        # Configure SVT-AV1 params:
+        # If threads > 0, restrict to specified thread count (RAM-safe for cloud instances).
+        # If threads <= 0, use lp=0 to auto-scale across all available CPU cores.
+        if self._settings.threads > 0:
+            base_params = f"{self._settings.svt_params}:lp={self._settings.threads}"
+        else:
+            base_params = f"{self._settings.svt_params}:lp=0"
 
         # Capped CRF: Enforce maximum bitrate ceiling at 90% of source bitrate
         # Prevents negative compression / size bloat on noisy or complex high-entropy scenes

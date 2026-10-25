@@ -170,7 +170,7 @@ function parseCLI() {
     skipLowBitrate: true,
     crf: parseInt(process.env.VIDEO_CRF, 10) || 30,
     preset: parseInt(process.env.VIDEO_PRESET, 10) || 8,
-    threads: parseInt(process.env.VIDEO_THREADS, 10) || 2,
+    threads: process.env.VIDEO_THREADS !== undefined && process.env.VIDEO_THREADS !== '' ? parseInt(process.env.VIDEO_THREADS, 10) : 2,
     audioCodec: process.env.AUDIO_CODEC || 'auto',
     audioBitrate: process.env.AUDIO_BITRATE || '192k',
     logFile: process.env.VIDEO_LOG_FILE || null,
@@ -277,9 +277,11 @@ function parseCLI() {
     } else if (arg === '--no-skip-low-bitrate') {
       options.skipLowBitrate = false;
     } else if (arg === '-t' || arg === '--threads') {
-      options.threads = parseInt(args[++i], 10) || 2;
+      const parsedThreads = parseInt(args[++i], 10);
+      options.threads = isNaN(parsedThreads) ? 2 : parsedThreads;
     } else if (arg.startsWith('--threads=')) {
-      options.threads = parseInt(arg.split('=')[1], 10) || 2;
+      const parsedThreads = parseInt(arg.split('=')[1], 10);
+      options.threads = isNaN(parsedThreads) ? 2 : parsedThreads;
     } else if (arg === '--audio-codec') {
       options.audioCodec = args[++i];
     } else if (arg.startsWith('--audio-codec=')) {

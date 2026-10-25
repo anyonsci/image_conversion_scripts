@@ -43,10 +43,9 @@ image_conversion_scripts/
 
 ## 2. Core Operating Principles for AI Agents
 
-1. **RAM-Conscious Concurrency (Single-Threaded `-j 1`)**:
-   - Deployment instances may operate with low memory (e.g. 1–2 GB RAM).
-   - High-resolution AVIF encoding (e.g. 12–50 MP photos) can consume significant RAM.
-   - Always default to `-j 1` (single worker) for encoding and cleanup scratch buffers immediately to prevent Linux OOM killer invocation or swap thrashing.
+1. **RAM-Conscious Concurrency vs High-Performance Workstations (Apple Silicon ARM64)**:
+   - On low-RAM cloud instances (e.g. 1–2 GB RAM), always default to `-j 1` (single image worker) and `-t 2` (or `lp=2`) to prevent Linux OOM killer invocation or swap thrashing.
+   - On high-core workstations (e.g. Apple Silicon workstations with high core counts and unified RAM), use `./setup_mac_arm.sh` and set `-t 0` (`lp=0`). This enables SVT-AV1 to auto-detect hardware concurrency and utilize all available Performance and Efficiency cores at full speed.
 2. **Never Delete Without Verified Validation**:
    - In `convert_to_avif.js`, original JPEGs/HEICs must **only** be deleted after:
      1. Converted AVIF passes SSIM verification (`SSIM >= minSSIM`, default 0.85).

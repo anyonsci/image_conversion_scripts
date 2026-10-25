@@ -24,6 +24,25 @@ The script automatically:
 
 ---
 
+## 🍏 Apple Silicon (macOS ARM64) Setup (Zero-Admin / Isolated User-Space)
+
+If running the heavy encoding phase on an Apple Silicon Mac without installing global packages or requiring `sudo`:
+
+```bash
+# Set up self-contained local environment (zero root, zero system pollution):
+./setup_mac_arm.sh
+```
+
+- **Zero Global Packages**: Installs native `darwin-arm64` tools (`ffmpeg` + `libsvtav1`, `libavif`, `exiftool`, `node`, `python`) into an isolated project-local folder (`./.mac_tools/`).
+- **Multi-Core Concurrency Acceleration**: Automatically configures SVT-AV1 with auto parallelism (`lp=0`) to light up all available Performance and Efficiency cores.
+- **Offline Mac Runner**: Generates `./run_mac_offline.sh` to run Phase 2 directly:
+  ```bash
+  ./run_mac_offline.sh ~/Downloads/mega_offline_kashmir
+  ```
+- **Clean Removal**: Delete anytime with `rm -rf .mac_tools env_mac.sh run_mac_offline.sh` leaving zero system traces.
+
+---
+
 ## 🔑 MEGA Authentication Setup
 
 You can authenticate using any of these 3 methods:
@@ -140,7 +159,8 @@ node meganz_utils/index.js organize --path="kashmir oct 26"
 
 ## 📂 Repository Structure
 
-- [`setup_ubuntu.sh`](setup_ubuntu.sh): Top-level automated Ubuntu installer.
+- [`setup_ubuntu.sh`](setup_ubuntu.sh): Top-level automated Ubuntu/Debian installer.
+- [`setup_mac_arm.sh`](setup_mac_arm.sh): Zero-admin, non-root installer for Apple Silicon (macOS ARM64).
 - [`convert_to_avif/`](convert_to_avif/): Standalone Python AVIF encoding and QA engine with gain-map support.
   - [`install_ubuntu.sh`](convert_to_avif/install_ubuntu.sh): Low-level C/C++ dependency and libavif build script.
 - [`convert_video_to_av1/`](convert_video_to_av1/): Standalone Python AV1 video encoding and QA engine (SVT-AV1, HDR 10-bit preservation, Capped CRF, faststart).
