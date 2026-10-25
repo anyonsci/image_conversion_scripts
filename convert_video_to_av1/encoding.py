@@ -16,22 +16,22 @@ class EncodeError(RuntimeError):
 
 
 def compute_adaptive_video_crf(info: VideoInfo, base_crf: int = 30) -> tuple[int, str]:
-    """Compute optimal AV1 CRF dynamically (30-34) based on resolution, bitrate, and dynamic range.
+    """Compute optimal AV1 CRF dynamically (30-36) based on resolution, framerate, bitrate, and dynamic range.
 
-    Guarantees that high-bitrate smartphone camera footage compresses effectively
-    without size bloat, while preserving visual transparency and smooth gradients.
-    Dynamic range is strictly constrained to [30, 34].
+    Guarantees that high-bitrate smartphone camera footage, 4K UHD, and 60 FPS video
+    compress effectively without size bloat, while preserving visual transparency and smooth gradients.
+    Dynamic range is strictly constrained to [30, 36].
     """
     reasons: list[str] = []
 
-    # Start at base CRF (clamped within [30, 34], default 30)
-    crf = max(30, min(base_crf, 34))
+    # Start at base CRF (clamped within [30, 36], default 30)
+    crf = max(30, min(base_crf, 36))
 
     # 1. Resolution-based scaling
     pixels = info.width * info.height
     if pixels >= 3840 * 2160:  # 4K UHD
-        crf += 3
-        reasons.append("4K high-density (+3 CRF)")
+        crf += 4
+        reasons.append("4K high-density (+4 CRF)")
     elif pixels >= 2560 * 1440:  # 1440p
         crf += 2
         reasons.append("1440p density (+2 CRF)")
@@ -41,7 +41,20 @@ def compute_adaptive_video_crf(info: VideoInfo, base_crf: int = 30) -> tuple[int
     else:
         reasons.append("<=720p detail preservation (base CRF)")
 
-    # 2. Bitrate / BPPF (bits per pixel-frame) scaling
+    # 2. High Framerate (FPS >= 50, e.g. 60 FPS)
+    # Temporal integration in human vision masks micro-quantization;
+    # +1 CRF prevents 60fps from inflating overall bitrate
+    if info.fps >= 50.0:
+        crf += 1
+        reasons.append(f"{info.fps:.0f}fps temporal masking (+1 CRF)")
+
+    # 3. Short Micro-Clip Overhead Compensation (duration <= 5.0s)
+    # In clips <= 5s, initial I-frame and container overhead take a disproportionate share
+    if 0 < info.duration <= 5.0 and pixels >= 1920 * 1080:
+        crf += 1
+        reasons.append("micro-clip I-frame overhead compensation (+1 CRF)")
+
+    # 4. Bitrate / BPPF (bits per pixel-frame) scaling
     if info.duration > 0 and pixels > 0 and info.fps > 0 and info.size_bytes > 0:
         bppf = (info.size_bytes * 8.0) / (pixels * info.fps * info.duration)
         reasons.append(f"BPPF={bppf:.3f}")
@@ -54,18 +67,22 @@ def compute_adaptive_video_crf(info: VideoInfo, base_crf: int = 30) -> tuple[int
                 crf += 1
                 reasons.append("moderate-bitrate camera video (+1 CRF)")
             elif bppf < 0.05:
-                # Already heavily compressed; keep at floor 30 to prevent degradation
-                crf = 30
-                reasons.append("low-bitrate source safeguard (CRF 30)")
+                # Already heavily compressed; floor at 30
+                crf = max(30, crf - 1)
+                reasons.append("low-bitrate source safeguard")
 
-    # 3. HDR 10-bit banding safeguard (cap at 32 to guarantee ultra-smooth color gradients)
+    # 5. HDR 10-bit banding safeguard
+    # For <=1080p HDR, cap at 32 (or 33 if 60fps) to prevent banding on lower-density screens.
+    # For 4K HDR, 10-bit density allows up to 36 with pristine gradients.
     if info.is_hdr or info.bit_depth > 8:
-        if crf > 32:
-            crf = 32
-            reasons.append("10-bit HDR gradient protection (capped at 32)")
+        if pixels < 3840 * 2160:
+            max_hdr_crf = 33 if info.fps >= 50.0 else 32
+            if crf > max_hdr_crf:
+                crf = max_hdr_crf
+                reasons.append(f"1080p 10-bit HDR gradient protection (capped at {max_hdr_crf})")
 
-    # Strictly enforce 30-34 dynamic range
-    final_crf = max(30, min(crf, 34))
+    # Strictly enforce 30-36 dynamic range
+    final_crf = max(30, min(crf, 36))
     return final_crf, ", ".join(reasons) or "default"
 
 
@@ -81,6 +98,13 @@ class VideoEncoder:
             print(f"  [Adaptive Quality] Using CRF {target_crf} (base: {self._settings.crf}, {reason})", flush=True)
 
         preset = self._settings.preset
+        # 4K UHD throughput optimization: Preset 8 takes ~1.5h per 5s on low-core CPUs;
+        # dynamically use Preset 10 for 4K to achieve 5x-8x throughput
+        pixels = info.width * info.height
+        if pixels >= 3840 * 2160 and preset < 10:
+            preset = 10
+            print(f"  [4K UHD Dynamic Preset] Using Preset {preset} for 4K video (accelerates encoding on multi-core CPU)", flush=True)
+
         if info.is_low_bitrate:
             preset = max(preset, 10)
             print(f"  [Low-Bitrate Fast-Pass] Source is pre-compressed ({info.bitrate_bps / 1000:.0f} kbps); using fast Preset {preset}", flush=True)

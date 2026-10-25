@@ -113,16 +113,25 @@ class TestVideoConverter(unittest.TestCase):
         from convert_video_to_av1.encoding import compute_adaptive_video_crf
         from convert_video_to_av1.models import VideoInfo
 
-        # 1. 4K high density test -> crf should scale up to top of range (34)
+        # 1. 4K high density test -> crf should scale up to top of range (36)
         info_4k = VideoInfo(
             path="dummy.mp4", duration=10.0, width=3840, height=2160, fps=30.0,
             video_codec="h264", audio_codec="aac", pix_fmt="yuv420p", bit_depth=8,
             is_hdr=False, size_bytes=100_000_000
         )
         crf_4k, reason_4k = compute_adaptive_video_crf(info_4k, 30)
-        self.assertEqual(crf_4k, 34)
+        self.assertEqual(crf_4k, 36)
 
-        # 2. 1080p high-bitrate camera original -> crf should scale to 33
+        # 2. 4K 60fps HDR test -> scales up to 35-36 range without being locked at 32
+        info_4k_60_hdr = VideoInfo(
+            path="dummy4k60.mov", duration=5.8, width=3840, height=2160, fps=60.0,
+            video_codec="hevc", audio_codec="aac", pix_fmt="yuv420p10le", bit_depth=10,
+            is_hdr=True, size_bytes=20_000_000
+        )
+        crf_4k_60, reason_4k_60 = compute_adaptive_video_crf(info_4k_60_hdr, 30)
+        self.assertEqual(crf_4k_60, 35)
+
+        # 3. 1080p high-bitrate camera original -> crf should scale to 33
         info_1080p_high = VideoInfo(
             path="camera.mp4", duration=7.9, width=1920, height=1080, fps=30.0,
             video_codec="h264", audio_codec="aac", pix_fmt="yuv420p", bit_depth=8,
@@ -131,7 +140,7 @@ class TestVideoConverter(unittest.TestCase):
         crf_1080p, reason_1080p = compute_adaptive_video_crf(info_1080p_high, 30)
         self.assertEqual(crf_1080p, 33)
 
-        # 3. 10-bit HDR video -> capped at 32 for banding protection
+        # 4. 1080p 10-bit HDR video -> capped at 32 for banding protection
         info_hdr = VideoInfo(
             path="hdr.mp4", duration=6.0, width=1920, height=1080, fps=30.0,
             video_codec="hevc", audio_codec="aac", pix_fmt="yuv420p10le", bit_depth=10,
@@ -140,7 +149,7 @@ class TestVideoConverter(unittest.TestCase):
         crf_hdr, reason_hdr = compute_adaptive_video_crf(info_hdr, 30)
         self.assertEqual(crf_hdr, 32)
 
-        # 4. 720p or lower standard test -> floor at 30
+        # 5. 720p or lower standard test -> floor at 30
         info_720 = VideoInfo(
             path="dummy.mp4", duration=10.0, width=1280, height=720, fps=30.0,
             video_codec="h264", audio_codec="aac", pix_fmt="yuv420p", bit_depth=8,
