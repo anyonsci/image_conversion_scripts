@@ -441,6 +441,9 @@ async function processVideo(item, config) {
       stderr = execErr.stderr || '';
 
       const combined = stdout + '\n' + stderr;
+      const aqLine = combined.split('\n').find((l) => l.includes('[Adaptive Quality]'));
+      if (aqLine) logger.info(`  ${aqLine.trim()}`);
+
       if (
         combined.includes('REJECTED') ||
         combined.includes('QA Failed: Insufficient compression') ||

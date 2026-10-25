@@ -79,11 +79,12 @@ def compute_adaptive_video_crf(info: VideoInfo, base_crf: int = 30) -> tuple[int
                 reasons.append("low-bitrate source safeguard")
 
     # 6. HDR 10-bit banding safeguard
-    # For <=1080p HDR, cap at 32 (or 33 if 60fps) to prevent banding on lower-density screens.
+    # For <=1080p HDR, cap at 33 (or 34 if 60fps) to prevent banding while allowing
+    # sufficient compression against 10-bit HEVC sources.
     # For 4K HDR, 10-bit density allows up to 36 with pristine gradients.
     if info.is_hdr or info.bit_depth > 8:
         if pixels < 3840 * 2160:
-            max_hdr_crf = 33 if info.fps >= 50.0 else 32
+            max_hdr_crf = 34 if info.fps >= 50.0 else 33
             if crf > max_hdr_crf:
                 crf = max_hdr_crf
                 reasons.append(f"1080p 10-bit HDR gradient protection (capped at {max_hdr_crf})")

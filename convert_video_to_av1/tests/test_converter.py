@@ -140,14 +140,14 @@ class TestVideoConverter(unittest.TestCase):
         crf_1080p, reason_1080p = compute_adaptive_video_crf(info_1080p_high, 30)
         self.assertEqual(crf_1080p, 33)
 
-        # 4. 1080p 10-bit HDR video -> capped at 32 for banding protection
+        # 4. 1080p 10-bit HDR video -> capped at 33 for banding protection
         info_hdr = VideoInfo(
             path="hdr.mp4", duration=6.0, width=1920, height=1080, fps=30.0,
             video_codec="hevc", audio_codec="aac", pix_fmt="yuv420p10le", bit_depth=10,
             is_hdr=True, size_bytes=17_000_000
         )
         crf_hdr, reason_hdr = compute_adaptive_video_crf(info_hdr, 30)
-        self.assertEqual(crf_hdr, 32)
+        self.assertEqual(crf_hdr, 33)
 
         # 5. 720p or lower standard test -> floor at 30
         info_720 = VideoInfo(
