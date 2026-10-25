@@ -91,6 +91,9 @@ class VideoConverter:
                 error_message=f"Probe failed: {e}",
             )
 
+        # Determine effective CRF and preset based on source video characteristics
+        eff_crf, eff_preset = self._encoder.get_effective_settings(info)
+
         # Check if already AV1
         if info.is_av1 and not self._force:
             return ConvertResult(
@@ -100,6 +103,8 @@ class VideoConverter:
                 original_size=info.size_bytes,
                 converted_size=info.size_bytes,
                 duration_sec=info.duration,
+                crf=eff_crf,
+                preset=eff_preset,
                 error_message="Video codec is already AV1",
             )
 
@@ -112,6 +117,8 @@ class VideoConverter:
                 original_size=info.size_bytes,
                 converted_size=output.stat().st_size,
                 duration_sec=info.duration,
+                crf=eff_crf,
+                preset=eff_preset,
                 error_message="Output file already exists",
             )
 
@@ -125,6 +132,8 @@ class VideoConverter:
                 original_size=info.size_bytes,
                 converted_size=info.size_bytes,
                 duration_sec=info.duration,
+                crf=eff_crf,
+                preset=eff_preset,
                 error_message=(
                     f"Video is already highly compressed (Bitrate: {kbps:.0f} kbps, "
                     f"BPPF: {info.bppf:.3f}). Skipping to prevent generation loss and CPU waste."
@@ -138,6 +147,8 @@ class VideoConverter:
                 output=str(output),
                 original_size=info.size_bytes,
                 duration_sec=info.duration,
+                crf=eff_crf,
+                preset=eff_preset,
                 error_message="Dry-run simulated",
             )
 
@@ -154,6 +165,8 @@ class VideoConverter:
                 output=None,
                 original_size=info.size_bytes,
                 duration_sec=info.duration,
+                crf=eff_crf,
+                preset=eff_preset,
                 error_message=str(e),
             )
 
@@ -168,6 +181,8 @@ class VideoConverter:
                 output=None,
                 original_size=info.size_bytes,
                 duration_sec=info.duration,
+                crf=eff_crf,
+                preset=eff_preset,
                 error_message=str(e),
                 qa_passed=False,
             )
@@ -222,5 +237,7 @@ class VideoConverter:
             original_size=info.size_bytes,
             converted_size=out_size,
             duration_sec=info.duration,
+            crf=eff_crf,
+            preset=eff_preset,
             qa_passed=True,
         )

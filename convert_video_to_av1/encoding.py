@@ -99,22 +99,31 @@ class VideoEncoder:
         self._tools = toolchain
         self._settings = settings
 
-    def build_ffmpeg_cmd(self, info: VideoInfo, output_path: Path) -> list[str]:
+    def get_effective_settings(self, info: VideoInfo) -> tuple[int, int]:
+        """Compute the effective CRF and preset for a given video."""
         target_crf = self._settings.crf
         if self._settings.adaptive_quality:
-            target_crf, reason = compute_adaptive_video_crf(info, self._settings.crf)
-            print(f"  [Adaptive Quality] Using CRF {target_crf} (base: {self._settings.crf}, {reason})", flush=True)
+            target_crf, _ = compute_adaptive_video_crf(info, self._settings.crf)
 
         preset = self._settings.preset
-        # 4K UHD throughput optimization: Preset 8 takes ~1.5h per 5s on low-core CPUs;
-        # dynamically use Preset 10 for 4K to achieve 5x-8x throughput
         pixels = info.width * info.height
         if pixels >= 3840 * 2160 and preset < 10:
             preset = 10
+        if info.is_low_bitrate:
+            preset = max(preset, 10)
+        return target_crf, preset
+
+    def build_ffmpeg_cmd(self, info: VideoInfo, output_path: Path) -> list[str]:
+        target_crf, preset = self.get_effective_settings(info)
+        if self._settings.adaptive_quality:
+            _, reason = compute_adaptive_video_crf(info, self._settings.crf)
+            print(f"  [Adaptive Quality] Using CRF {target_crf} (base: {self._settings.crf}, {reason})", flush=True)
+
+        pixels = info.width * info.height
+        if pixels >= 3840 * 2160 and self._settings.preset < 10:
             print(f"  [4K UHD Dynamic Preset] Using Preset {preset} for 4K video (accelerates encoding on multi-core CPU)", flush=True)
 
         if info.is_low_bitrate:
-            preset = max(preset, 10)
             print(f"  [Low-Bitrate Fast-Pass] Source is pre-compressed ({info.bitrate_bps / 1000:.0f} kbps); using fast Preset {preset}", flush=True)
 
         cmd = [

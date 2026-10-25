@@ -192,6 +192,55 @@ function scanLocalVideoFiles(dir, baseDir = dir) {
 }
 
 /**
+ * Extracts duration, effective CRF, and preset from conversion execution output.
+ * Falls back to config defaults or standard FFmpeg log patterns.
+ * @param {string} output
+ * @param {object} config
+ * @returns {{ durationSec: number, crf: number, preset: number }}
+ */
+function extractConversionMetadata(output, config) {
+  let durationSec = 0.0;
+  let crf = config && config.crf != null ? config.crf : 30;
+  let preset = config && config.preset != null ? config.preset : 8;
+
+  // 1. Check Python status line: Duration: 6.13s | CRF: 33 | Preset: 8
+  const durMatch = output.match(/Duration:\s*([\d.]+)s/i);
+  if (durMatch) {
+    durationSec = parseFloat(durMatch[1]) || 0.0;
+  } else {
+    // Fallback: FFmpeg stderr standard duration format (Duration: 00:01:23.45)
+    const ffmpegDur = output.match(/Duration:\s*(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)/);
+    if (ffmpegDur) {
+      durationSec =
+        parseInt(ffmpegDur[1], 10) * 3600 +
+        parseInt(ffmpegDur[2], 10) * 60 +
+        parseFloat(ffmpegDur[3]);
+      durationSec = parseFloat(durationSec.toFixed(2));
+    }
+  }
+
+  // 2. Check CRF: Python status line or Adaptive Quality log
+  const statusCrfMatch = output.match(/\bCRF:\s*(\d+)/i);
+  const aqMatch = output.match(/\[Adaptive Quality\]\s+Using CRF\s+(\d+)/i);
+  if (statusCrfMatch) {
+    crf = parseInt(statusCrfMatch[1], 10) || crf;
+  } else if (aqMatch) {
+    crf = parseInt(aqMatch[1], 10) || crf;
+  }
+
+  // 3. Check Preset: Python status line or dynamic preset logs
+  const presetMatch =
+    output.match(/\bPreset:\s*(\d+)/i) ||
+    output.match(/Using Preset\s+(\d+)/i) ||
+    output.match(/fast Preset\s+(\d+)/i);
+  if (presetMatch) {
+    preset = parseInt(presetMatch[1], 10) || preset;
+  }
+
+  return { durationSec, crf, preset };
+}
+
+/**
  * Phase 2: Offline Conversion.
  * Converts downloaded files, saves to output dir mirroring structure, and records to CSV manifest.
  * @param {object} config
@@ -308,6 +357,7 @@ async function convertAllOfflinePhase(config, offlineDirs) {
       const combined = stdout + '\n' + stderr;
       const aqLine = combined.split('\n').find((l) => l.includes('[Adaptive Quality]'));
       if (aqLine) logger.info(`  ${aqLine.trim()}`);
+      const meta = extractConversionMetadata(combined, config);
 
       if (
         combined.includes('REJECTED') ||
@@ -326,9 +376,9 @@ async function convertAllOfflinePhase(config, offlineDirs) {
           originalSize: file.size,
           convertedSize: 0,
           savingsPct: 0.0,
-          durationSec: 0.0,
-          crf: config.crf,
-          preset: config.preset,
+          durationSec: meta.durationSec,
+          crf: meta.crf,
+          preset: meta.preset,
           timestamp: new Date().toISOString(),
           uploaded: false,
           errorMessage: cleanMsg,
@@ -348,9 +398,9 @@ async function convertAllOfflinePhase(config, offlineDirs) {
           originalSize: file.size,
           convertedSize: file.size,
           savingsPct: 0.0,
-          durationSec: 0.0,
-          crf: config.crf,
-          preset: config.preset,
+          durationSec: meta.durationSec,
+          crf: meta.crf,
+          preset: meta.preset,
           timestamp: new Date().toISOString(),
           uploaded: false,
           errorMessage: cleanSkip,
@@ -367,9 +417,9 @@ async function convertAllOfflinePhase(config, offlineDirs) {
         originalSize: file.size,
         convertedSize: 0,
         savingsPct: 0.0,
-        durationSec: 0.0,
-        crf: config.crf,
-        preset: config.preset,
+        durationSec: meta.durationSec,
+        crf: meta.crf,
+        preset: meta.preset,
         timestamp: new Date().toISOString(),
         uploaded: false,
         errorMessage: errorMsg,
@@ -380,8 +430,10 @@ async function convertAllOfflinePhase(config, offlineDirs) {
     }
 
     // Success path
-    const aqLine = stdout.split('\n').find((l) => l.includes('[Adaptive Quality]'));
+    const combinedOut = stdout + '\n' + stderr;
+    const aqLine = combinedOut.split('\n').find((l) => l.includes('[Adaptive Quality]'));
     if (aqLine) logger.info(`  ${aqLine.trim()}`);
+    const meta = extractConversionMetadata(combinedOut, config);
 
     if (fs.existsSync(targetAv1Path) && fs.statSync(targetAv1Path).size > 0) {
       const convSize = fs.statSync(targetAv1Path).size;
@@ -396,9 +448,9 @@ async function convertAllOfflinePhase(config, offlineDirs) {
         originalSize: file.size,
         convertedSize: convSize,
         savingsPct: parseFloat(ratio),
-        durationSec: 0.0,
-        crf: config.crf,
-        preset: config.preset,
+        durationSec: meta.durationSec,
+        crf: meta.crf,
+        preset: meta.preset,
         timestamp: new Date().toISOString(),
         uploaded: false,
         errorMessage: '',
@@ -615,4 +667,5 @@ module.exports = {
   convertAllOfflinePhase,
   uploadAllPhase,
   runOfflineVideoTask,
+  extractConversionMetadata,
 };

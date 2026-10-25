@@ -96,6 +96,8 @@ class ConvertResult:
     original_size: int = 0
     converted_size: int = 0
     duration_sec: float = 0.0
+    crf: int = 0
+    preset: int = 0
     error_message: Optional[str] = None
     qa_passed: bool = False
 

@@ -295,4 +295,36 @@ assert.ok(fs.existsSync(dirs.outputDir));
 fs.rmSync(tempTestDir, { recursive: true, force: true });
 console.log('✔ Test 11 passed: Offline workspace directory structure & path conservation');
 
+// Test 12: Conversion output metadata extraction (duration_sec, crf, preset)
+const { extractConversionMetadata } = require('./tasks/offline_video');
+
+// Case 1: Status line with duration, CRF, and preset
+const out1 = `
+  [Adaptive Quality] Using CRF 33 (base: 30, 1080p Full HD (+1 CRF))
+  Status: CONVERTED | Original: 6712705B | Converted: 6220000B | Duration: 6.13s | CRF: 33 | Preset: 8
+`;
+const meta1 = extractConversionMetadata(out1, { crf: 30, preset: 8 });
+assert.strictEqual(meta1.durationSec, 6.13);
+assert.strictEqual(meta1.crf, 33);
+assert.strictEqual(meta1.preset, 8);
+
+// Case 2: 4K UHD video with dynamic preset 10 and FFmpeg duration format
+const out2 = `
+  [Adaptive Quality] Using CRF 35 (base: 30, 4K high-density (+4 CRF))
+  [4K UHD Dynamic Preset] Using Preset 10 for 4K video
+  Duration: 00:01:15.50, start: 0.000000, bitrate: 45000 kb/s
+`;
+const meta2 = extractConversionMetadata(out2, { crf: 30, preset: 8 });
+assert.strictEqual(meta2.durationSec, 75.5);
+assert.strictEqual(meta2.crf, 35);
+assert.strictEqual(meta2.preset, 10);
+
+// Case 3: Empty / failed output fallback to config
+const meta3 = extractConversionMetadata('error occurred', { crf: 30, preset: 8 });
+assert.strictEqual(meta3.durationSec, 0.0);
+assert.strictEqual(meta3.crf, 30);
+assert.strictEqual(meta3.preset, 8);
+
+console.log('✔ Test 12 passed: Conversion metadata extraction (duration, crf, preset)');
+
 console.log('\nAll unit tests passed successfully!');

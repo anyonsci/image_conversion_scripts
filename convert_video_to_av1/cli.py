@@ -145,7 +145,7 @@ def main(args: list[str] | None = None) -> int:
         print(f"Converting: {input_path.name} -> {out_path.name}")
         res = converter.convert_file(input_path, out_path)
         results.append(res)
-        print(f"    Status: {res.status.value.upper()} | Original: {res.original_size}B | Converted: {res.converted_size}B")
+        print(f"    Status: {res.status.value.upper()} | Original: {res.original_size}B | Converted: {res.converted_size}B | Duration: {res.duration_sec:.2f}s | CRF: {res.crf} | Preset: {res.preset}")
         if res.error_message:
             print(f"    Detail: {res.error_message}")
             if res.status == ConvertStatus.REJECTED:
@@ -164,7 +164,7 @@ def main(args: list[str] | None = None) -> int:
             print(f"[{idx}/{len(video_files)}] Processing: {rel}...")
             res = converter.convert_file(src, out_file)
             results.append(res)
-            print(f"    Status: {res.status.value.upper()} | Original: {res.original_size}B | Converted: {res.converted_size}B")
+            print(f"    Status: {res.status.value.upper()} | Original: {res.original_size}B | Converted: {res.converted_size}B | Duration: {res.duration_sec:.2f}s | CRF: {res.crf} | Preset: {res.preset}")
             if res.error_message:
                 print(f"    Detail: {res.error_message}")
                 if res.status == ConvertStatus.REJECTED:
