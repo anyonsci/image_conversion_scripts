@@ -9,13 +9,16 @@ A modular, extensible, production-ready Node.js utility suite for automating ope
 ```text
 meganz_utils/
 ├── lib/                        # Core reusable utilities
-│   ├── client.js               # MEGA client authentication (CLI, .env, or rclone.conf)
+│   ├── client.js               # MEGA client auth & persistent session resumption
+│   ├── manifest.js             # CSV manifest management & RFC-4180 parsing for offline resumption
 │   ├── scanner.js              # Folder resolution & extension filtering
 │   └── logger.js               # Timestamped logging & formatting
 ├── tasks/                      # Modular task runners
 │   ├── upload_thumbnails.js    # Task 1: Full-frame thumbnail & preview generator
 │   ├── convert_to_avif.js      # Task 2: Automated JPEG -> AVIF converter & sync
-│   └── organize_daywise.js     # Task 3: Fast day-wise folder organizer
+│   ├── convert_video_to_av1.js # Task 3: Streaming MP4/MOV -> AV1 video converter & sync
+│   ├── offline_video.js        # Task 4: 3-phase offline video pipeline (batch dl -> local convert -> batch ul)
+│   └── organize_daywise.js     # Task 5: Fast day-wise folder organizer
 ├── index.js                    # Unified CLI entrypoint & task dispatcher
 ├── package.json                # Project manifest & npm scripts
 ├── .env.example                # Environment variables template
@@ -147,6 +150,104 @@ node index.js organize --path="kashmir"
 | `-p, --path <path>` | Target folder on MEGA to organize | `"/"` |
 | `--dry-run` | Simulate date resolution & preview file counts per day | `false` |
 | `--rclone-remote <remote>` | Rclone remote name to load credentials from | `"mega1"` |
+
+---
+
+## Command 4: `convert-video` (Streaming Remote Video to AV1)
+
+Recursively streams `.mp4` and `.mov` videos from MEGA to disk, converts video streams to AV1 using SVT-AV1 with audio preservation, performs full-stream decode QA verification, generates poster thumbnails/previews, uploads back to MEGA as `<stem>.av1.mp4`, and deletes original remote files.
+
+### Features
+- **Adaptive CRF Tuning**: Dynamically scales CRF in the range `[30, 36]` based on resolution (4K UHD +4 CRF, 1080p +1 CRF), framerate (60fps +1 CRF), source codec (HEVC +1 CRF), and bitrate efficiency.
+- **Capped CRF Ceiling (`mbr`)**: Restricts SVT-AV1 maximum bitrate to `0.90 * source_bitrate` to prevent file bloat on noisy or complex scenes (e.g. blizzards, water bursts).
+- **Preset 10 Acceleration for 4K**: Employs SVT-AV1 Preset 10 on 4K content for 5x–8x throughput acceleration while maintaining high perceptual fidelity.
+- **Strict QA Protection**: Original video files are only deleted if the converted AV1 achieves positive compression savings and passes a lossless null-sink decode test (`ffmpeg -v error -i <file> -f null -`). If no savings are achieved, the original file is safely retained.
+
+### Usage
+```bash
+# Preview candidate videos:
+node index.js convert-video --path="kashmir" --dry-run
+
+# Run streaming conversion (CRF 30 dynamic, Preset 8, 2 threads):
+node index.js convert-video --path="kashmir" -crf 30 --preset 8
+
+# Force re-conversion of already converted videos:
+node index.js convert-video --path="kashmir" --force
+```
+
+### Options for `convert-video`
+| Flag | Description | Default |
+| :--- | :--- | :--- |
+| `-p, --path <path>` | Target folder on MEGA | `"/"` |
+| `-crf, --crf <num>` | Base AV1 Constant Rate Factor (30-36) | `30` |
+| `--preset <num>` | SVT-AV1 encoder preset (0-13) | `8` |
+| `-t, --threads <num>` | Worker threads for SVT-AV1 | `2` |
+| `--audio-codec <codec>` | Audio codec: `auto`, `copy`, `aac`, `opus` | `auto` |
+| `--audio-bitrate <rate>`| Audio bitrate when re-encoding | `192k` |
+| `--adaptive-quality` | Dynamically tune CRF based on resolution and bitrate | `true` |
+| `--no-adaptive-quality` | Force fixed CRF for all videos | `false` |
+| `--skip-low-bitrate` | Skip videos already compressed below 1.2 Mbps | `true` |
+| `--dry-run` | List candidate videos without converting | `false` |
+
+---
+
+## Command 5: `offline` / Video Offline Mode
+
+A decoupled, 3-phase batch video conversion pipeline designed for large cloud libraries and unreliable or metered connections. Separates network I/O from compute-heavy CPU encoding and uses a persistent CSV manifest for resilient resumption.
+
+```text
+~/ws/mega_offline_<folder_name>/
+├── input/                  # Phase 1: Exact MEGA folder structure with downloaded originals
+│   └── Day 1/
+│       └── clip1.MOV
+├── output/                 # Phase 2: Mirrored folder structure with converted AV1 videos
+│   └── Day 1/
+│       └── clip1.av1.mp4
+└── manifest.csv            # Persistent state tracking: enables resumption & manual re-runs
+```
+
+### 3-Phase Architecture
+1. **Phase 1: Batch Download (`--download-only`)**:
+   Downloads all candidate videos (`.mp4`, `.mov`, `.m4v`, excluding `.av1.mp4`) in one go into `<offline_dir>/input/`, reproducing the exact remote folder hierarchy. Automatically skips already-downloaded files on resume.
+2. **Phase 2: Local Offline Conversion (`--convert-only`)**:
+   Encodes each file from `<offline_dir>/input/` into `<offline_dir>/output/`, mirroring the folder structure for direct comparison. Runs **100% offline** with zero network activity and no credentials required. Tracks all results in `manifest.csv`.
+3. **Phase 3: Batch Upload & Remote Cleanup (`--upload-only`)**:
+   Connects to MEGA in a single batch session, generates poster frames, streams converted AV1 videos to their parent folders, deletes original remote videos, and marks entries as `uploaded = true` in `manifest.csv`.
+
+### CSV Manifest (`manifest.csv`) Format
+Every file processed in Phase 2 is immediately recorded to disk:
+```csv
+relative_path,status,original_size,converted_size,savings_pct,duration_sec,crf,preset,timestamp,uploaded,error_message
+Day 1/IMG_0001.MOV,converted,45123984,18049593,60.0,0.0,32,8,2026-10-25T01:00:00Z,false,
+Day 1/IMG_0002.MOV,rejected_no_savings,12000000,0,0.0,0.0,30,8,2026-10-25T01:05:00Z,false,AV1 output did not achieve minimum required savings
+```
+
+- **Resumption**: Re-running Phase 2 or Phase 3 automatically skips files marked `converted`, `rejected_no_savings`, or `skipped_low_bitrate`.
+- **Manual Re-run Control**: To re-encode a file with different settings, simply delete that row from `manifest.csv`. The next run will pick up and re-process that file.
+
+### Usage
+```bash
+# Run full 3-phase offline pipeline end-to-end:
+node index.js convert-video --path="kashmir" --offline
+
+# Phase 1: Batch download candidate videos:
+node index.js convert-video --path="kashmir" --download-only
+
+# Phase 2: Convert offline (can run anywhere, even air-gapped without MEGA credentials):
+node index.js convert-video --convert-only --offline-dir="~/ws/mega_offline_kashmir"
+
+# Phase 3: Batch upload converted videos and delete originals:
+node index.js convert-video --path="kashmir" --upload-only
+```
+
+### Options for Offline Mode
+| Flag | Description | Default |
+| :--- | :--- | :--- |
+| `--offline` | Enable 3-phase offline video pipeline | `false` |
+| `--offline-dir <path>` | Custom directory for offline workspace | `~/ws/mega_offline_<folder>` |
+| `--download-only` | Run Phase 1 only (download candidates to local disk) | `false` |
+| `--convert-only` | Run Phase 2 only (local conversion, no MEGA connection) | `false` |
+| `--upload-only` | Run Phase 3 only (batch upload converted videos & cleanup) | `false` |
 
 ---
 

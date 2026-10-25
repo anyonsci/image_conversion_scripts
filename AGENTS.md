@@ -27,11 +27,13 @@ image_conversion_scripts/
 ├── meganz_utils/               # Layer 2: Node.js automation suite for MEGA.nz
 │   ├── lib/
 │   │   ├── client.js           # MEGA client auth (rclone config / .env) + custom HTTP parser
+│   │   ├── manifest.js         # CSV manifest parser & serializer for offline state tracking
 │   │   ├── scanner.js          # Remote folder resolution & extension filtering
 │   │   └── logger.js           # Timestamped logging formatting
 │   ├── tasks/
 │   │   ├── convert_to_avif.js  # Task 1: Remote JPEG/HEIC -> AVIF sync pipeline
 │   │   ├── convert_video_to_av1.js # Task 1b: Remote MP4/MOV -> AV1 streaming pipeline
+│   │   ├── offline_video.js    # Task 1c: 3-phase offline video conversion pipeline
 │   │   ├── upload_thumbnails.js# Task 2: High-resolution thumbnail/preview generator
 │   │   └── organize_daywise.js # Task 3: Day-wise trip organizer (Day 1 - Day 7)
 │   └── index.js                # Unified CLI entrypoint & dispatcher
@@ -61,6 +63,12 @@ image_conversion_scripts/
    - **Video AV1 Detection**: All converted videos strictly use the `<stem>.av1.mp4` suffix. The scanner immediately excludes `*.av1.mp4` by filename regex (0 bytes) and verifies whether `<stem>.av1.mp4` already exists on MEGA before downloading any source video.
    - **Day-wise Organizing**: Never download full photos to move them. Extract dates via filename regex (0 bytes) or header range reads (~128 KB for EXIF, ~1 KB for QuickTime atoms). Move files using MEGA's server-side `moveTo()` API.
    - **Thumbnails**: Point to local directories (`--local-dir`) whenever files exist locally to prevent redundant downloads.
+5. **Offline Mode & Resumable Manifest (`manifest.csv`)**:
+   - For batch jobs or flaky connections, use Offline Mode (`tasks/offline_video.js`).
+   - Inputs are stored in `<offlineDir>/input/` and outputs in `<offlineDir>/output/` mirroring MEGA subfolder hierarchy.
+   - Resumption skips files marked `converted`, `rejected_no_savings`, or `skipped_low_bitrate`.
+   - If a row is deleted manually from `manifest.csv`, resume logic must pick up and re-process that file.
+   - In Phase 3 (Batch Upload), only entries with status `converted` and `uploaded != true` are uploaded; `uploaded = true` is saved atomically upon completion.
 
 ---
 
@@ -91,6 +99,15 @@ image_conversion_scripts/
 - **Symptom**: Upload fails with `Error: MEGA returned a 400 status code` during file upload or attribute upload.
 - **Root Cause**: MEGA storage servers strictly enforce a 1 MB (1,048,576 bytes) ceiling on file attributes (Attribute 0: thumbnail, Attribute 1: preview). Generating 1600px previews at high quality (`-q:v 2`) on complex, high-entropy scenes (trees, mountains, water) can generate previews exceeding 1 MB, triggering an HTTP 400 Bad Request.
 - **Solution**: Previews must be encoded with `-q:v 4` and dynamically capped below 800 KB. `uploadFileWithRetry` in [`tasks/convert_to_avif.js`](meganz_utils/tasks/convert_to_avif.js) catches stream errors, intercepts 400 responses, and automatically retries by stripping oversized preview attributes so the underlying AVIF file is never blocked.
+
+### G. Persistent Session Resumption & Datacenter IP Locking
+- **Symptom**: Frequent script restarts or repeated raw password logins from cloud/datacenter IPs trigger MEGA security lockouts ("unauthorised third party").
+- **Root Cause**: MEGA flags frequent password logins from cloud IPs as credential stuffing.
+- **Solution**: [`lib/client.js`](meganz_utils/lib/client.js) automatically caches the active session in `~/.cache/meganz_utils/session_<hash>.json` with `0600` permissions and strips raw passwords. Subsequent runs resume the session seamlessly without triggering MEGA fraud detection.
+
+### H. Capped CRF Ceiling (`mbr`) for High-Noise Videos
+- **Symptom**: AV1 files for high-entropy scenes (blizzards, snowstorms, rough seas) end up larger than original H.264/HEVC files.
+- **Solution**: SVT-AV1 parameters enforce a strict maximum bitrate ceiling `mbr = int(source_bitrate * 0.90 / 1000)` in [`convert_video_to_av1/encoding.py`](convert_video_to_av1/encoding.py), ensuring converted files never exceed 90% of source size regardless of noise.
 
 ---
 
