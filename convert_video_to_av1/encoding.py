@@ -54,7 +54,14 @@ def compute_adaptive_video_crf(info: VideoInfo, base_crf: int = 30) -> tuple[int
         crf += 1
         reasons.append("micro-clip I-frame overhead compensation (+1 CRF)")
 
-    # 4. Bitrate / BPPF (bits per pixel-frame) scaling
+    # 4. Input Codec Efficiency Check
+    # HEVC/H.265 is already ~40-50% more efficient than H.264.
+    # When source is HEVC, +1 CRF is needed to out-compress the high-efficiency source
+    if info.video_codec.lower() in ("hevc", "h265", "hev1", "hvc1"):
+        crf += 1
+        reasons.append("HEVC source efficiency (+1 CRF)")
+
+    # 5. Bitrate / BPPF (bits per pixel-frame) scaling
     if info.duration > 0 and pixels > 0 and info.fps > 0 and info.size_bytes > 0:
         bppf = (info.size_bytes * 8.0) / (pixels * info.fps * info.duration)
         reasons.append(f"BPPF={bppf:.3f}")
@@ -71,7 +78,7 @@ def compute_adaptive_video_crf(info: VideoInfo, base_crf: int = 30) -> tuple[int
                 crf = max(30, crf - 1)
                 reasons.append("low-bitrate source safeguard")
 
-    # 5. HDR 10-bit banding safeguard
+    # 6. HDR 10-bit banding safeguard
     # For <=1080p HDR, cap at 32 (or 33 if 60fps) to prevent banding on lower-density screens.
     # For 4K HDR, 10-bit density allows up to 36 with pristine gradients.
     if info.is_hdr or info.bit_depth > 8:

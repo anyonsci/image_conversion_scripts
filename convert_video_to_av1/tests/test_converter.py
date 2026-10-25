@@ -122,14 +122,14 @@ class TestVideoConverter(unittest.TestCase):
         crf_4k, reason_4k = compute_adaptive_video_crf(info_4k, 30)
         self.assertEqual(crf_4k, 36)
 
-        # 2. 4K 60fps HDR test -> scales up to 35-36 range without being locked at 32
+        # 2. 4K 60fps HDR HEVC test -> scales up to 36 (4K + 60fps + HEVC efficiency)
         info_4k_60_hdr = VideoInfo(
             path="dummy4k60.mov", duration=5.8, width=3840, height=2160, fps=60.0,
             video_codec="hevc", audio_codec="aac", pix_fmt="yuv420p10le", bit_depth=10,
             is_hdr=True, size_bytes=20_000_000
         )
         crf_4k_60, reason_4k_60 = compute_adaptive_video_crf(info_4k_60_hdr, 30)
-        self.assertEqual(crf_4k_60, 35)
+        self.assertEqual(crf_4k_60, 36)
 
         # 3. 1080p high-bitrate camera original -> crf should scale to 33
         info_1080p_high = VideoInfo(
