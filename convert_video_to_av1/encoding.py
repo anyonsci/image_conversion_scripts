@@ -126,6 +126,14 @@ class VideoEncoder:
         # Configure SVT-AV1 params (RAM-safe threads / level of parallelism)
         threads = max(1, self._settings.threads)
         base_params = f"{self._settings.svt_params}:lp={threads}"
+
+        # Capped CRF: Enforce maximum bitrate ceiling at 90% of source bitrate
+        # Prevents negative compression / size bloat on noisy or complex high-entropy scenes
+        if info.bitrate_bps > 0:
+            mbr_kbps = max(300, int((info.bitrate_bps * 0.90) / 1000.0))
+            base_params += f":mbr={mbr_kbps}"
+            print(f"  [Capped CRF] Enforcing maximum bitrate ceiling mbr={mbr_kbps} kbps (90% of source {info.bitrate_bps / 1000:.0f} kbps)", flush=True)
+
         cmd.extend(["-svtav1-params", base_params])
 
         # Color & Bit Depth

@@ -231,6 +231,26 @@ class TestVideoConverter(unittest.TestCase):
         # Verify output file was cleaned up on rejection
         self.assertFalse(out_path.exists())
 
+    def test_capped_crf_mbr(self):
+        from convert_video_to_av1.encoding import VideoEncoder
+        from convert_video_to_av1.models import EncodeSettings, VideoInfo
+        from pathlib import Path
+
+        # 10 Mbps source video -> 90% cap = 9000 kbps
+        info = VideoInfo(
+            path="source.mp4", duration=10.0, width=1920, height=1080, fps=30.0,
+            video_codec="h264", audio_codec="aac", pix_fmt="yuv420p", bit_depth=8,
+            is_hdr=False, size_bytes=12_500_000  # 10,000,000 bps = 10,000 kbps
+        )
+        encoder = VideoEncoder(self.tools, EncodeSettings(crf=30, preset=8, threads=2))
+        cmd = encoder.build_ffmpeg_cmd(info, Path("out.av1.mp4"))
+
+        # Verify svtav1-params contains mbr=9000
+        svt_idx = cmd.index("-svtav1-params")
+        svt_params = cmd[svt_idx + 1]
+        self.assertIn("mbr=9000", svt_params)
+        self.assertIn("lp=2", svt_params)
+
 
 if __name__ == "__main__":
     unittest.main()
