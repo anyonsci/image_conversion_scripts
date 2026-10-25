@@ -283,11 +283,22 @@ verify_installation() {
   log "Verifying end-to-end toolchain integrity..."
   export PATH="${TOOLS_DIR}/bin:$PATH"
 
-  # Verify ffmpeg + svtav1
-  if ! ffmpeg -encoders 2>&1 | grep -q libsvtav1; then
-    die "ffmpeg with libsvtav1 verification failed."
+  local FFMPEG_CMD="ffmpeg"
+  if [[ -x "${TOOLS_DIR}/bin/ffmpeg" ]]; then
+    FFMPEG_CMD="${TOOLS_DIR}/bin/ffmpeg"
   fi
-  ok "ffmpeg with SVT-AV1 verified."
+
+  log "Testing ffmpeg binary: $FFMPEG_CMD"
+  local ENCODER_OUTPUT
+  ENCODER_OUTPUT="$("$FFMPEG_CMD" -hide_banner -encoders 2>&1 || true)"
+
+  if echo "$ENCODER_OUTPUT" | grep -qi "libsvtav1"; then
+    ok "ffmpeg with SVT-AV1 verified: $("$FFMPEG_CMD" -version 2>&1 | head -n1)"
+  else
+    warn "ffmpeg encoder inspection output:"
+    echo "$ENCODER_OUTPUT" | head -n 25 >&2
+    die "ffmpeg with libsvtav1 verification failed. Binary tested: $FFMPEG_CMD"
+  fi
 
   # Verify Node.js unit tests
   log "Running Node.js unit tests..."
