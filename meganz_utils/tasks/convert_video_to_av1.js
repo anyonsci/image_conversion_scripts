@@ -413,7 +413,60 @@ async function processVideo(item, config) {
 
     const conversionCmd = cmd.join(' ');
     logger.info(`Running convert_video_to_av1 for "${fileName}" [CRF: ${crf}, Preset: ${preset}, Threads: ${threads}]...`);
-    const { stdout, stderr } = await execPromise(conversionCmd);
+    let stdout = '';
+    let stderr = '';
+    try {
+      const res = await execPromise(conversionCmd);
+      stdout = res.stdout || '';
+      stderr = res.stderr || '';
+    } catch (execErr) {
+      stdout = execErr.stdout || '';
+      stderr = execErr.stderr || '';
+
+      const combined = stdout + '\n' + stderr;
+      if (
+        combined.includes('REJECTED') ||
+        combined.includes('QA Failed: Insufficient compression') ||
+        combined.includes('QA Rejection:')
+      ) {
+        const detailLine = combined
+          .split('\n')
+          .find((l) => l.includes('Insufficient compression') || l.includes('QA Failed:') || l.includes('QA Rejection:')) || 'AV1 output did not achieve minimum required savings.';
+        const cleanMsg = detailLine.replace(/.*(?:QA Rejection:|QA Failed:|Detail:)\s*/i, '').trim();
+
+        logger.warn(`Retaining original "${fileName}": ${cleanMsg}`);
+        appendToLogFile(config.logFilePath, `Retained original "${fileName}": ${cleanMsg}`);
+        return {
+          status: 'rejected_savings',
+          fileName,
+          originalSize: downloadedSize,
+          convertedSize: downloadedSize,
+          reason: cleanMsg,
+        };
+      }
+
+      if (combined.includes('SKIPPED')) {
+        const skipLine = combined.split('\n').find((l) => l.includes('SKIPPED') || l.includes('already highly compressed')) || combined;
+        const cleanSkip = skipLine.replace(/.*(?:SKIPPED.*?:\s*|Detail:\s*)/i, '').trim();
+        logger.info(`Skipped "${fileName}": ${cleanSkip}`);
+        appendToLogFile(config.logFilePath, `Skipped "${fileName}": ${cleanSkip}`);
+        return {
+          status: 'skipped',
+          fileName,
+          originalSize: downloadedSize,
+          convertedSize: downloadedSize,
+        };
+      }
+
+      const errorMsg = (stderr.trim() || stdout.trim() || execErr.message);
+      throw new Error(`Conversion process failed for "${fileName}":\n${errorMsg}`);
+    }
+
+    // Log adaptive quality rationale if present
+    const aqLine = stdout.split('\n').find((l) => l.includes('[Adaptive Quality]'));
+    if (aqLine) {
+      logger.info(aqLine.trim());
+    }
 
     if (!fs.existsSync(tempAv1Path) || fs.statSync(tempAv1Path).size === 0) {
       if (stdout && stdout.includes('SKIPPED')) {
@@ -525,6 +578,7 @@ async function runSinglePass(storage, targetFolder, config) {
 
   let successCount = 0;
   let skippedCount = 0;
+  let rejectedSavingsCount = 0;
   let errorCount = 0;
   let totalOrigBytes = 0;
   let totalConvBytes = 0;
@@ -553,6 +607,10 @@ async function runSinglePass(storage, targetFolder, config) {
         successCount++;
         totalOrigBytes += result.originalSize;
         totalConvBytes += result.convertedSize;
+      } else if (result.status === 'rejected_savings') {
+        rejectedSavingsCount++;
+        totalOrigBytes += result.originalSize;
+        totalConvBytes += result.originalSize;
       } else if (result.status === 'skipped_existing' || result.status === 'skipped') {
         skippedCount++;
         totalOrigBytes += result.originalSize;
@@ -571,14 +629,15 @@ async function runSinglePass(storage, targetFolder, config) {
   logger.info(`\n=======================================================`);
   logger.info(`Video conversion pass completed in ${durationSec}s:`);
   logger.info(`- Converted successfully: ${successCount}`);
-  logger.info(`- Skipped existing: ${skippedCount}`);
-  logger.info(`- Failed: ${errorCount}`);
+  logger.info(`- Retained original (no savings): ${rejectedSavingsCount}`);
+  logger.info(`- Skipped (existing/pre-compressed): ${skippedCount}`);
+  logger.info(`- Failed with errors: ${errorCount}`);
   logger.info(`- Original video size: ${formatBytes(totalOrigBytes)}`);
   logger.info(`- Converted AV1 size: ${formatBytes(totalConvBytes)}`);
   logger.info(`- Space saved: ${formatBytes(totalSavedBytes)} (${overallRatio}% reduction)`);
   logger.info(`=======================================================\n`);
 
-  return { successCount, skippedCount, errorCount };
+  return { successCount, rejectedSavingsCount, skippedCount, errorCount };
 }
 
 /**

@@ -145,6 +145,11 @@ def main(args: list[str] | None = None) -> int:
         print(f"Converting: {input_path.name} -> {out_path.name}")
         res = converter.convert_file(input_path, out_path)
         results.append(res)
+        print(f"    Status: {res.status.value.upper()} | Original: {res.original_size}B | Converted: {res.converted_size}B")
+        if res.error_message:
+            print(f"    Detail: {res.error_message}")
+            if res.status == ConvertStatus.REJECTED:
+                print(f"QA Rejection: {res.error_message}", file=sys.stderr)
     else:
         # Directory recursive conversion
         out_root = parsed.output.resolve() if parsed.output else input_path
@@ -162,20 +167,30 @@ def main(args: list[str] | None = None) -> int:
             print(f"    Status: {res.status.value.upper()} | Original: {res.original_size}B | Converted: {res.converted_size}B")
             if res.error_message:
                 print(f"    Detail: {res.error_message}")
+                if res.status == ConvertStatus.REJECTED:
+                    print(f"QA Rejection: {res.error_message}", file=sys.stderr)
 
     # Summary
     success_count = sum(1 for r in results if r.status == ConvertStatus.CONVERTED)
     skipped_count = sum(1 for r in results if r.status == ConvertStatus.SKIPPED)
-    failed_count = sum(1 for r in results if r.status in (ConvertStatus.FAILED, ConvertStatus.REJECTED))
+    rejected_count = sum(1 for r in results if r.status == ConvertStatus.REJECTED)
+    failed_count = sum(1 for r in results if r.status == ConvertStatus.FAILED)
 
     if parsed.json_summary:
         print(json.dumps([r.to_dict() for r in results], indent=2))
     else:
         print("\n" + "=" * 50)
-        print(f"Video Conversion Complete: {success_count} converted, {skipped_count} skipped, {failed_count} failed")
+        print(
+            f"Video Conversion Complete: {success_count} converted, {skipped_count} skipped, "
+            f"{rejected_count} rejected (no savings), {failed_count} failed"
+        )
         print("=" * 50)
 
-    return 0 if failed_count == 0 else 2
+    if failed_count > 0:
+        return 1
+    if rejected_count > 0:
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
