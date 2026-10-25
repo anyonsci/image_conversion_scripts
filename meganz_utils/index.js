@@ -139,8 +139,8 @@ Examples:
 `);
 }
 
-function parseCLI() {
-  const args = process.argv.slice(2);
+function parseCLI(customArgs = null) {
+  const args = customArgs || process.argv.slice(2);
   if (args.length === 0 || args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     return { command: 'help' };
   }
@@ -190,10 +190,17 @@ function parseCLI() {
     const arg = args[i];
     if (arg === '--help' || arg === '-h') {
       options.help = true;
-    } else if (arg === '-p' || arg === '--path') {
+    } else if (arg === '--path') {
       options.targetPath = args[++i];
     } else if (arg.startsWith('--path=')) {
       options.targetPath = arg.split('=')[1];
+    } else if (arg === '-p') {
+      const nextVal = args[++i];
+      if (/^\d+$/.test(nextVal)) {
+        options.preset = parseInt(nextVal, 10);
+      } else {
+        options.targetPath = nextVal;
+      }
     } else if (arg === '-e' || arg === '--ext') {
       options.ext = parseExtensionFilter(args[++i]);
     } else if (arg.startsWith('--ext=')) {
@@ -268,10 +275,12 @@ function parseCLI() {
       options.crf = parseInt(args[++i], 10) || 30;
     } else if (arg.startsWith('--crf=')) {
       options.crf = parseInt(arg.split('=')[1], 10) || 30;
-    } else if (arg === '-p' || arg === '--preset') {
-      options.preset = parseInt(args[++i], 10) || 8;
+    } else if (arg === '--preset') {
+      const parsedPreset = parseInt(args[++i], 10);
+      options.preset = isNaN(parsedPreset) ? 8 : parsedPreset;
     } else if (arg.startsWith('--preset=')) {
-      options.preset = parseInt(arg.split('=')[1], 10) || 8;
+      const parsedPreset = parseInt(arg.split('=')[1], 10);
+      options.preset = isNaN(parsedPreset) ? 8 : parsedPreset;
     } else if (arg === '--skip-low-bitrate') {
       options.skipLowBitrate = true;
     } else if (arg === '--no-skip-low-bitrate') {
@@ -420,7 +429,13 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  logger.error('Fatal execution error:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    logger.error('Fatal execution error:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  parseCLI,
+};

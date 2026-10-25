@@ -614,7 +614,7 @@ async function runOfflineVideoTask(storage, targetFolder, options = {}) {
       : detectVideoConvertScriptPath(),
     logFilePath: resolveHomePath(options.logFile || path.join(offlineDirs.offlineDir, 'video_conversion.log')),
     crf: options.crf || 30,
-    preset: options.preset || 8,
+    preset: options.preset != null ? options.preset : 8,
     threads: options.threads !== undefined ? options.threads : 2,
     audioCodec: options.audioCodec || 'auto',
     audioBitrate: options.audioBitrate || '192k',

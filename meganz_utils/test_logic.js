@@ -327,4 +327,20 @@ assert.strictEqual(meta3.preset, 8);
 
 console.log('✔ Test 12 passed: Conversion metadata extraction (duration, crf, preset)');
 
+// Test 13: CLI argument parsing for preset, path, and threads
+const { parseCLI } = require('./index');
+
+const parsed1 = parseCLI(['convert-video', '--convert-only', '--offline-dir=/tmp/mega', '-p', '6', '-t', '0']);
+assert.strictEqual(parsed1.preset, 6, '-p 6 should parse preset as 6');
+assert.strictEqual(parsed1.threads, 0, '-t 0 should parse threads as 0');
+
+const parsed2 = parseCLI(['convert-video', '--preset=7']);
+assert.strictEqual(parsed2.preset, 7, '--preset=7 should parse preset as 7');
+
+const parsed3 = parseCLI(['convert', '-p', 'kashmir']);
+assert.strictEqual(parsed3.targetPath, 'kashmir', '-p <string> should parse as targetPath');
+assert.strictEqual(parsed3.preset, 8, 'default preset should remain 8');
+
+console.log('✔ Test 13 passed: CLI argument parsing for preset (-p), path, and threads');
+
 console.log('\nAll unit tests passed successfully!');
