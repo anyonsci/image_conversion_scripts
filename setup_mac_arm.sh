@@ -73,6 +73,11 @@ detect_hardware() {
 check_existing_tools() {
   log "Checking for existing tools on PATH..."
 
+  # Check standard Apple Silicon Homebrew location if present
+  if [[ -d "/opt/homebrew/bin" && ":$PATH:" != *":/opt/homebrew/bin:"* ]]; then
+    export PATH="/opt/homebrew/bin:$PATH"
+  fi
+
   HAS_FFMPEG=0
   HAS_SVTAV1=0
   HAS_NODE=0
@@ -130,18 +135,29 @@ install_via_brew() {
 
 install_self_contained() {
   log "Setting up isolated, non-root toolchain in: ${TOOLS_DIR}..."
-  mkdir -p "${TOOLS_DIR}/bin"
 
-  local MAMBA_BIN="${TOOLS_DIR}/bin/micromamba"
+  local BOOTSTRAP_DIR="/tmp/mamba_boot_${USER:-user}"
+  mkdir -p "${BOOTSTRAP_DIR}"
+
+  local MAMBA_BIN="${BOOTSTRAP_DIR}/bin/micromamba"
   if [[ ! -x "$MAMBA_BIN" ]]; then
     log "Downloading standalone Micromamba static binary (macOS ARM64)..."
-    curl -Ls https://micro.mamba.pm/api/micromamba/osx-arm64/latest | tar -xj -C "${TOOLS_DIR}" bin/micromamba
+    curl -Ls https://micro.mamba.pm/api/micromamba/osx-arm64/latest | tar -xj -C "${BOOTSTRAP_DIR}" bin/micromamba
     chmod +x "$MAMBA_BIN"
     ok "Micromamba ready: ${MAMBA_BIN}"
   fi
 
+  # Clean up any pre-existing non-conda directory at TOOLS_DIR from previous aborted runs
+  if [[ -d "${TOOLS_DIR}" && ! -d "${TOOLS_DIR}/conda-meta" ]]; then
+    warn "Removing uninitialized folder at ${TOOLS_DIR} to prepare clean prefix..."
+    rm -rf "${TOOLS_DIR}"
+  fi
+
+  export MAMBA_ROOT_PREFIX="/tmp/mamba_root_${USER:-user}"
+  mkdir -p "${MAMBA_ROOT_PREFIX}"
+
   log "Installing native Apple Silicon packages (ffmpeg + libsvtav1, libavif, exiftool, nodejs, python)..."
-  "$MAMBA_BIN" create -p "${TOOLS_DIR}" -c conda-forge \
+  "$MAMBA_BIN" create -y -p "${TOOLS_DIR}" -c conda-forge \
     ffmpeg \
     svt-av1 \
     libavif \
@@ -150,7 +166,11 @@ install_self_contained() {
     python=3.11 \
     pillow \
     numpy \
-    -y --no-rc
+    --no-rc
+
+  # Copy micromamba binary into TOOLS_DIR/bin and clean up temporary bootstrap directories
+  cp "${MAMBA_BIN}" "${TOOLS_DIR}/bin/micromamba" 2>/dev/null || true
+  rm -rf "${BOOTSTRAP_DIR}" "${MAMBA_ROOT_PREFIX}"
 
   ok "Isolated toolchain installed successfully in ${TOOLS_DIR}."
 }
